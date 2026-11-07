@@ -1,7 +1,28 @@
 const path = require('path');
+const fs = require('fs');
 const mysql = require('mysql2/promise');
 const bcrypt = require('bcryptjs');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
+const getSslConfig = () => {
+  const caPath = process.env.CA || process.env.DB_CA_PATH;
+  if (caPath) {
+    try {
+      if (fs.existsSync(caPath)) {
+        return { ca: fs.readFileSync(caPath), minVersion: 'TLSv1.2', rejectUnauthorized: true };
+      }
+    } catch (e) {
+      // If path cannot be read directly, use system/Node default TLS
+    }
+    return { minVersion: 'TLSv1.2', rejectUnauthorized: true };
+  }
+  if (process.env.DB_HOST && process.env.DB_HOST.includes('tidbcloud.com')) {
+    return { minVersion: 'TLSv1.2', rejectUnauthorized: true };
+  }
+  return undefined;
+};
+
+const sslConfig = getSslConfig();
 
 const dbConfig = {
   host: process.env.DB_HOST || 'localhost',
@@ -12,6 +33,7 @@ const dbConfig = {
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
+  ...(sslConfig ? { ssl: sslConfig } : {}),
 };
 
 // Create a connection pool for queries
@@ -21,17 +43,22 @@ const pool = mysql.createPool(dbConfig);
 async function initializeDatabase() {
   try {
     // 1. Connect without selecting database to ensure database exists
-    const tempConnection = await mysql.createConnection({
-      host: dbConfig.host,
-      port: dbConfig.port,
-      user: dbConfig.user,
-      password: dbConfig.password,
-    });
+    try {
+      const tempConnection = await mysql.createConnection({
+        host: dbConfig.host,
+        port: dbConfig.port,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        ...(sslConfig ? { ssl: sslConfig } : {}),
+      });
 
-    await tempConnection.query(
-      `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`
-    );
-    await tempConnection.end();
+      await tempConnection.query(
+        `CREATE DATABASE IF NOT EXISTS \`${dbConfig.database}\`;`
+      );
+      await tempConnection.end();
+    } catch (dbErr) {
+      // In managed cloud databases like TiDB, database may already exist or permissions managed via console
+    }
 
     // 2. Create Users table
     await pool.query(`
