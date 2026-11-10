@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { WebView } from 'react-native-webview';
 import { api } from '../services/api';
+import THEME from '../constants/theme';
 
 export default function Report({ user, records, onBack }) {
   const [selectedRecord, setSelectedRecord] = useState(null);
@@ -31,7 +32,6 @@ export default function Report({ user, records, onBack }) {
 
   const [areaName, setAreaName] = useState(null);
   const [areaLoading, setAreaLoading] = useState(false);
-  const [modalScrollEnabled, setModalScrollEnabled] = useState(true);
 
   useEffect(() => {
     async function fetchHistory() {
@@ -188,7 +188,6 @@ export default function Report({ user, records, onBack }) {
     setCalendarVisible(false);
   };
 
-  // Calendar Grid Calculations
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
@@ -217,34 +216,36 @@ export default function Report({ user, records, onBack }) {
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
+        {/* Header Bar */}
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
             onPress={onBack}
             activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="arrow-back" size={20} color="#0F172A" />
+            <Ionicons name="arrow-back" size={18} color={THEME.colors.textPrimary} />
             <Text style={styles.backText}>Back</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Attendance Report</Text>
+          <Text style={styles.headerTitle}>Attendance History</Text>
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* Date Filter Card (Above Table) */}
+        {/* Date Filter Card */}
         <View style={styles.filterCard}>
           <View style={styles.filterHeader}>
             <View style={styles.filterTitleRow}>
-              <Ionicons name="calendar" size={17} color="#0284C7" />
+              <Ionicons name="filter-outline" size={16} color={THEME.colors.primary} />
               <Text style={styles.filterTitle}>Filter by Date Range</Text>
             </View>
             {fromDate || toDate ? (
               <TouchableOpacity onPress={handleReset} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Text style={styles.resetText}>Reset</Text>
+                <Text style={styles.resetText}>Reset Filter</Text>
               </TouchableOpacity>
             ) : null}
           </View>
 
-          {/* Inputs Row: From Date and To Date with Calendar Tap */}
+          {/* Date Range Inputs */}
           <View style={styles.dateInputsRow}>
             {/* From Date Box */}
             <View style={styles.dateInputWrapper}>
@@ -259,8 +260,8 @@ export default function Report({ user, records, onBack }) {
               >
                 <Ionicons
                   name="calendar-outline"
-                  size={16}
-                  color={fromDate ? '#0284C7' : '#64748B'}
+                  size={15}
+                  color={fromDate ? THEME.colors.primary : THEME.colors.textSecondary}
                   style={styles.inputIcon}
                 />
                 <Text
@@ -278,7 +279,7 @@ export default function Report({ user, records, onBack }) {
                     style={styles.clearIcon}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                    <Ionicons name="close-circle" size={15} color={THEME.colors.textMuted} />
                   </TouchableOpacity>
                 ) : null}
               </TouchableOpacity>
@@ -297,8 +298,8 @@ export default function Report({ user, records, onBack }) {
               >
                 <Ionicons
                   name="calendar-outline"
-                  size={16}
-                  color={toDate ? '#0284C7' : '#64748B'}
+                  size={15}
+                  color={toDate ? THEME.colors.primary : THEME.colors.textSecondary}
                   style={styles.inputIcon}
                 />
                 <Text
@@ -316,7 +317,7 @@ export default function Report({ user, records, onBack }) {
                     style={styles.clearIcon}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
-                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                    <Ionicons name="close-circle" size={15} color={THEME.colors.textMuted} />
                   </TouchableOpacity>
                 ) : null}
               </TouchableOpacity>
@@ -333,31 +334,31 @@ export default function Report({ user, records, onBack }) {
           </View>
 
           {isLoading ? (
-            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <ActivityIndicator size="large" color="#0284C7" />
-              <Text style={{ marginTop: 12, color: '#64748B', fontSize: 13, fontWeight: '500' }}>
-                Loading attendance records...
-              </Text>
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color={THEME.colors.primary} />
+              <Text style={styles.loadingText}>Fetching attendance records...</Text>
             </View>
           ) : filteredRecords.length === 0 ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="calendar-outline" size={38} color="#94A3B8" />
+              <Ionicons name="calendar-outline" size={36} color={THEME.colors.surfaceMuted} />
               <Text style={styles.emptyTitle}>No Records Found</Text>
               <Text style={styles.emptySubtitle}>
-                No attendance found between {fromDate} and {toDate}
+                No attendance logs found for the selected date criteria.
               </Text>
-              <TouchableOpacity style={styles.clearFilterBtn} onPress={handleReset}>
-                <Text style={styles.clearFilterBtnText}>Clear Filter</Text>
-              </TouchableOpacity>
+              {(fromDate || toDate) && (
+                <TouchableOpacity style={styles.clearFilterBtn} onPress={handleReset}>
+                  <Text style={styles.clearFilterBtnText}>Clear Filter</Text>
+                </TouchableOpacity>
+              )}
             </View>
           ) : (
             <View style={styles.tableContainer}>
-              {/* Table Header */}
+              {/* Table Column Headers */}
               <View style={styles.tableHeaderRow}>
-                <Text style={[styles.columnHeader, styles.colSno]}>S.No</Text>
+                <Text style={[styles.columnHeader, styles.colSno]}>#</Text>
                 <Text style={[styles.columnHeader, styles.colDate]}>Date</Text>
-                <Text style={[styles.columnHeader, styles.colIn]}>IN</Text>
-                <Text style={[styles.columnHeader, styles.colOut]}>OUT</Text>
+                <Text style={[styles.columnHeader, styles.colIn]}>Clock In</Text>
+                <Text style={[styles.columnHeader, styles.colOut]}>Clock Out</Text>
                 <Text style={[styles.columnHeader, styles.colAction]}>Action</Text>
               </View>
 
@@ -369,28 +370,32 @@ export default function Report({ user, records, onBack }) {
                     key={item.id || index}
                     style={[styles.tableRow, isLast && styles.tableRowLast]}
                   >
-                    <Text style={[styles.cellText, styles.colSno]}>{item.sno}</Text>
+                    <Text style={[styles.cellText, styles.colSno]}>{item.sno || index + 1}</Text>
                     <Text style={[styles.cellDateText, styles.colDate]}>{item.date}</Text>
 
-                    {/* IN Time */}
-                    <Text style={[
-                      styles.cellTimeIn,
-                      styles.colIn,
-                      isLateTime(item.inTime) && styles.cellTimeInLate,
-                    ]}>
+                    {/* Clock In */}
+                    <Text
+                      style={[
+                        styles.cellTimeIn,
+                        styles.colIn,
+                        isLateTime(item.inTime) && styles.cellTimeInLate,
+                      ]}
+                    >
                       {item.inTime && item.inTime !== '--:--' ? item.inTime : '--'}
                     </Text>
 
-                    {/* OUT Time */}
-                    <Text style={[
-                      styles.cellTimeOut,
-                      styles.colOut,
-                      item.outTime && item.outTime !== '--:--' && styles.cellTimeOutActive,
-                    ]}>
+                    {/* Clock Out */}
+                    <Text
+                      style={[
+                        styles.cellTimeOut,
+                        styles.colOut,
+                        item.outTime && item.outTime !== '--:--' && styles.cellTimeOutActive,
+                      ]}
+                    >
                       {item.outTime && item.outTime !== '--:--' ? item.outTime : '--'}
                     </Text>
 
-                    {/* View Action Button */}
+                    {/* View Details Action */}
                     <View style={styles.colAction}>
                       <TouchableOpacity
                         style={styles.viewButton}
@@ -430,11 +435,11 @@ export default function Report({ user, records, onBack }) {
                 style={styles.monthNavButton}
                 activeOpacity={0.7}
               >
-                <Ionicons name="chevron-back" size={20} color="#0F172A" />
+                <Ionicons name="chevron-back" size={18} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
               <View style={styles.calendarTitleContainer}>
                 <Text style={styles.calendarTargetLabel}>
-                  {calendarTarget === 'from' ? 'Select From Date' : 'Select To Date'}
+                  {calendarTarget === 'from' ? 'Filter From Date' : 'Filter To Date'}
                 </Text>
                 <Text style={styles.calendarMonthText}>
                   {monthNames[cMonth]} {cYear}
@@ -445,11 +450,11 @@ export default function Report({ user, records, onBack }) {
                 style={styles.monthNavButton}
                 activeOpacity={0.7}
               >
-                <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+                <Ionicons name="chevron-forward" size={18} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            {/* Weekday Names Row */}
+            {/* Weekdays */}
             <View style={styles.weekDaysRow}>
               {weekDays.map((wd) => (
                 <Text key={wd} style={styles.weekDayText}>
@@ -458,7 +463,7 @@ export default function Report({ user, records, onBack }) {
               ))}
             </View>
 
-            {/* Calendar Days Grid */}
+            {/* Calendar Grid */}
             <View style={styles.daysGrid}>
               {blanks.map((b) => (
                 <View key={`b-${b}`} style={styles.dayCell} />
@@ -492,7 +497,7 @@ export default function Report({ user, records, onBack }) {
               })}
             </View>
 
-            {/* Calendar Footer Buttons */}
+            {/* Calendar Footer */}
             <View style={styles.calendarFooter}>
               <TouchableOpacity
                 style={styles.calendarTodayBtn}
@@ -513,7 +518,7 @@ export default function Report({ user, records, onBack }) {
         </Pressable>
       </Modal>
 
-      {/* Attendance Detail Modal */}
+      {/* Attendance Detail & GPS Map Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -521,7 +526,6 @@ export default function Report({ user, records, onBack }) {
         onRequestClose={() => setModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          {/* Backdrop tap to close */}
           <TouchableOpacity
             style={StyleSheet.absoluteFill}
             activeOpacity={1}
@@ -529,7 +533,7 @@ export default function Report({ user, records, onBack }) {
           />
 
           <View style={styles.modalContent}>
-            {/* Modal Header (Fixed at top) */}
+            {/* Modal Header */}
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalTitle}>Attendance Details</Text>
@@ -538,31 +542,25 @@ export default function Report({ user, records, onBack }) {
               <TouchableOpacity
                 onPress={() => setModalVisible(false)}
                 style={styles.modalCloseButton}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="close" size={20} color="#64748B" />
+                <Ionicons name="close" size={18} color={THEME.colors.textSecondary} />
               </TouchableOpacity>
             </View>
 
-            {/* Scrollable details */}
             <ScrollView
               style={styles.modalScrollView}
               contentContainerStyle={styles.modalScrollContent}
               showsVerticalScrollIndicator={true}
               bounces={true}
-              keyboardShouldPersistTaps="handled"
             >
-
-              {/* Modal Body: Fields */}
+              {/* Details Body */}
               <View style={styles.modalBody}>
-                {/* 1. Emp ID */}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Emp ID</Text>
-                  <Text style={styles.detailValue}>
-                    {selectedRecord?.empId || '--'}
-                  </Text>
+                  <Text style={styles.detailLabel}>Employee ID</Text>
+                  <Text style={styles.detailValue}>{selectedRecord?.empId || '--'}</Text>
                 </View>
 
-                {/* 2. Employee Name */}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Name</Text>
                   <Text style={styles.detailValue}>
@@ -570,25 +568,26 @@ export default function Report({ user, records, onBack }) {
                   </Text>
                 </View>
 
-                {/* 3. Date */}
                 <View style={styles.detailRow}>
                   <Text style={styles.detailLabel}>Date</Text>
                   <Text style={styles.detailValue}>{selectedRecord?.date || '--'}</Text>
                 </View>
 
-                {/* 4. IN / OUT Time (side by side) */}
+                {/* Clock In / Out Summary Box */}
                 <View style={styles.detailRow}>
                   <View style={styles.timeInOutBox}>
                     <Ionicons
                       name="enter-outline"
                       size={13}
-                      color={isLateTime(selectedRecord?.inTime) ? '#DC2626' : '#16A34A'}
+                      color={isLateTime(selectedRecord?.inTime) ? THEME.colors.danger : THEME.colors.success}
                     />
                     <Text style={styles.timeInOutLabel}>IN</Text>
-                    <Text style={[
-                      styles.timeInOutValue,
-                      isLateTime(selectedRecord?.inTime) && { color: '#DC2626' },
-                    ]}>
+                    <Text
+                      style={[
+                        styles.timeInOutValue,
+                        isLateTime(selectedRecord?.inTime) && { color: THEME.colors.danger },
+                      ]}
+                    >
                       {selectedRecord?.inTime || '--:--'}
                     </Text>
                   </View>
@@ -597,43 +596,42 @@ export default function Report({ user, records, onBack }) {
                     <Ionicons
                       name="exit-outline"
                       size={13}
-                      color={selectedRecord?.outTime && selectedRecord.outTime !== '--:--' ? '#16A34A' : '#EA580C'}
+                      color={selectedRecord?.outTime && selectedRecord.outTime !== '--:--' ? THEME.colors.success : THEME.colors.primary}
                     />
                     <Text style={styles.timeInOutLabel}>OUT</Text>
-                    <Text style={[
-                      styles.timeInOutValue,
-                      selectedRecord?.outTime && selectedRecord.outTime !== '--:--' && { color: '#16A34A' },
-                    ]}>
+                    <Text
+                      style={[
+                        styles.timeInOutValue,
+                        selectedRecord?.outTime && selectedRecord.outTime !== '--:--' && { color: THEME.colors.success },
+                      ]}
+                    >
                       {selectedRecord?.outTime || '--:--'}
                     </Text>
                   </View>
                 </View>
 
-                {/* 5. IN Location */}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>IN Lat</Text>
-                  <Text style={styles.detailValue}>{selectedRecord?.latitude || '--'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>IN Lon</Text>
-                  <Text style={styles.detailValue}>{selectedRecord?.longitude || '--'}</Text>
-                </View>
-
-                {/* 6. OUT Location */}
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>OUT Lat</Text>
-                  <Text style={styles.detailValue}>{selectedRecord?.outLatitude && selectedRecord.outLatitude !== '--' ? selectedRecord.outLatitude : '--'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>OUT Lon</Text>
-                  <Text style={styles.detailValue}>{selectedRecord?.outLongitude && selectedRecord.outLongitude !== '--' ? selectedRecord.outLongitude : '--'}</Text>
+                  <Text style={styles.detailLabel}>Check-In Lat/Lon</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedRecord?.latitude && selectedRecord?.longitude
+                      ? `${selectedRecord.latitude}, ${selectedRecord.longitude}`
+                      : '--'}
+                  </Text>
                 </View>
 
-                {/* 7. Area Name */}
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Check-Out Lat/Lon</Text>
+                  <Text style={styles.detailValue}>
+                    {selectedRecord?.outLatitude && selectedRecord?.outLongitude
+                      ? `${selectedRecord.outLatitude}, ${selectedRecord.outLongitude}`
+                      : '--'}
+                  </Text>
+                </View>
+
                 <View style={[styles.detailRow, styles.detailRowLast]}>
-                  <Text style={styles.detailLabel}>Area</Text>
+                  <Text style={styles.detailLabel}>Area / District</Text>
                   {areaLoading ? (
-                    <ActivityIndicator size="small" color="#0284C7" />
+                    <ActivityIndicator size="small" color={THEME.colors.primary} />
                   ) : (
                     <Text style={[styles.detailValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
                       {areaName || '--'}
@@ -642,7 +640,7 @@ export default function Report({ user, records, onBack }) {
                 </View>
               </View>
 
-              {/* Map Section — dual pins for IN and OUT */}
+              {/* Map Section */}
               {(() => {
                 const inLat = parseCoord(selectedRecord?.latitude);
                 const inLon = parseCoord(selectedRecord?.longitude);
@@ -651,17 +649,16 @@ export default function Report({ user, records, onBack }) {
                 const hasIn = inLat !== null && inLon !== null;
                 const hasOut = outLat !== null && outLon !== null;
 
-                if (!hasIn && !hasOut) return (
-                  <View style={styles.mapPlaceholder}>
-                    <Ionicons name="map-outline" size={28} color="#94A3B8" />
-                    <Text style={styles.mapPlaceholderText}>No location data</Text>
-                  </View>
-                );
+                if (!hasIn && !hasOut) {
+                  return (
+                    <View style={styles.mapPlaceholder}>
+                      <Ionicons name="map-outline" size={26} color={THEME.colors.textMuted} />
+                      <Text style={styles.mapPlaceholderText}>No GPS location recorded for this entry</Text>
+                    </View>
+                  );
+                }
 
-                // Check if IN and OUT are at identical/overlapping location (< 25 meters)
                 const isOverlapping = hasIn && hasOut && Math.abs(inLat - outLat) < 0.00025 && Math.abs(inLon - outLon) < 0.00025;
-
-                // If overlapping, slightly offset coordinates so both pins are clearly visible side-by-side
                 const plotInLat = inLat;
                 const plotInLon = isOverlapping ? inLon - 0.00010 : inLon;
                 const plotOutLat = outLat;
@@ -670,7 +667,7 @@ export default function Report({ user, records, onBack }) {
                 const centerLat = hasIn && hasOut ? (inLat + outLat) / 2 : (hasIn ? inLat : outLat);
                 const centerLon = hasIn && hasOut ? (inLon + outLon) / 2 : (hasIn ? inLon : outLon);
 
-                const inTime  = selectedRecord?.inTime  || '';
+                const inTime = selectedRecord?.inTime || '';
                 const outTime = selectedRecord?.outTime || '';
 
                 const leafletHtml = `<!DOCTYPE html><html><head>
@@ -678,9 +675,9 @@ export default function Report({ user, records, onBack }) {
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
-  html,body,#map{height:100%;margin:0;padding:0;}
-  .leaflet-popup-content-wrapper{border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);}
-  .leaflet-popup-content{margin:8px 12px;line-height:1.4;}
+  html,body,#map{height:100%;margin:0;padding:0;background:#f8fafc;}
+  .leaflet-popup-content-wrapper{border-radius:10px;box-shadow:0 4px 12px rgba(15,23,42,0.15);font-family:sans-serif;}
+  .leaflet-popup-content{margin:8px 10px;line-height:1.3;}
 </style>
 </head><body>
 <div id="map"></div>
@@ -689,39 +686,38 @@ var map = L.map('map', {zoomControl: true}).setView([${centerLat},${centerLon}],
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
 
 ${hasIn ? `var inIcon = L.divIcon({
-  html:'<div style="background:#16A34A;color:#fff;border-radius:50% 50% 50% 0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);transform:rotate(-45deg)"><span style="transform:rotate(45deg)">IN</span></div>',
-  iconSize:[32,32],
-  iconAnchor:[16,32],
+  html:'<div style="background:#059669;color:#fff;border-radius:50% 50% 50% 0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);transform:rotate(-45deg)"><span style="transform:rotate(45deg)">IN</span></div>',
+  iconSize:[30,30],
+  iconAnchor:[15,30],
   className:''
 });
 var inMarker = L.marker([${plotInLat},${plotInLon}],{icon:inIcon, zIndexOffset: 100}).addTo(map);
-inMarker.bindPopup('<div style="text-align:center"><b style="color:#16A34A;font-size:13px">CHECK IN</b><div style="font-size:12px;color:#334155;margin-top:2px">${inTime || "--:--"}</div></div>');
+inMarker.bindPopup('<div style="text-align:center"><b style="color:#059669;font-size:12px">CHECK IN</b><div style="font-size:11px;color:#334155;margin-top:2px">${inTime || "--:--"}</div></div>');
 ` : ''}
 
 ${hasOut ? `var outIcon = L.divIcon({
-  html:'<div style="background:#EA580C;color:#fff;border-radius:50% 50% 50% 0;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.35);transform:rotate(-45deg)"><span style="transform:rotate(45deg)">OUT</span></div>',
-  iconSize:[32,32],
-  iconAnchor:[16,32],
+  html:'<div style="background:#EA580C;color:#fff;border-radius:50% 50% 50% 0;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,0.3);transform:rotate(-45deg)"><span style="transform:rotate(45deg)">OUT</span></div>',
+  iconSize:[30,30],
+  iconAnchor:[15,30],
   className:''
 });
 var outMarker = L.marker([${plotOutLat},${plotOutLon}],{icon:outIcon, zIndexOffset: 200}).addTo(map);
-outMarker.bindPopup('<div style="text-align:center"><b style="color:#EA580C;font-size:13px">CHECK OUT</b><div style="font-size:12px;color:#334155;margin-top:2px">${outTime || "--:--"}</div></div>');
+outMarker.bindPopup('<div style="text-align:center"><b style="color:#EA580C;font-size:12px">CHECK OUT</b><div style="font-size:11px;color:#334155;margin-top:2px">${outTime || "--:--"}</div></div>');
 ` : ''}
 
 ${isOverlapping ? `
-// Connecting dashed indicator line between both pins showing they share the spot
 L.polyline([[${plotInLat},${plotInLon}],[${plotOutLat},${plotOutLon}]],{color:'#64748B',weight:2,dashArray:'3,4',opacity:0.7}).addTo(map);
 if (typeof inMarker !== 'undefined') inMarker.openPopup();
 ` : ''}
 
-${hasIn && hasOut && !isOverlapping ? `map.fitBounds([[${plotInLat},${plotInLon}],[${plotOutLat},${plotOutLon}]],{padding:[35,35]});` : `map.setView([${centerLat},${centerLon}], 16);`}
+${hasIn && hasOut && !isOverlapping ? `map.fitBounds([[${plotInLat},${plotInLon}],[${plotOutLat},${plotOutLon}]],{padding:[30,30]});` : `map.setView([${centerLat},${centerLon}], 16);`}
 </script></body></html>`;
 
                 return (
                   <View style={styles.mapContainer}>
                     <View style={styles.mapLabelRow}>
-                      <Ionicons name="location" size={14} color="#4F46E5" />
-                      <Text style={styles.mapLabel}>Location Map</Text>
+                      <Ionicons name="map" size={13} color={THEME.colors.primary} />
+                      <Text style={styles.mapLabel}>GPS Location Map</Text>
                       {hasIn && <View style={styles.mapLegendIn}><Text style={styles.mapLegendText}>● IN</Text></View>}
                       {hasOut && <View style={styles.mapLegendOut}><Text style={styles.mapLegendTextOut}>● OUT</Text></View>}
                     </View>
@@ -746,7 +742,6 @@ ${hasIn && hasOut && !isOverlapping ? `map.fitBounds([[${plotInLat},${plotInLon}
               >
                 <Text style={styles.modalDoneButtonText}>Close</Text>
               </TouchableOpacity>
-
             </ScrollView>
           </View>
         </View>
@@ -758,447 +753,282 @@ ${hasIn && hasOut && !isOverlapping ? `map.fitBounds([[${plotInLat},${plotInLon}
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.background,
   },
   container: {
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 14,
     paddingBottom: 36,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 18,
+    marginBottom: 16,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    elevation: 2,
-    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.card,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+    gap: 4,
   },
   backText: {
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '700',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   headerTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     letterSpacing: -0.3,
   },
   headerSpacer: {
-    width: 68,
+    width: 60,
   },
 
-  /* Filter Card Styles */
+  /* Filter Card */
   filterCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 18,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    padding: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 18,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: THEME.colors.border,
+    marginBottom: 16,
+    ...THEME.shadows.card,
   },
   filterHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    marginBottom: 12,
   },
   filterTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   filterTitle: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     letterSpacing: -0.2,
   },
   resetText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#0284C7',
+    color: THEME.colors.primary,
   },
   dateInputsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   dateInputWrapper: {
     flex: 1,
   },
   dateInputLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#475569',
-    marginBottom: 6,
+    color: THEME.colors.textSecondary,
+    marginBottom: 5,
     letterSpacing: 0.2,
   },
   dateInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    height: 46,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 10,
+    height: 44,
   },
   dateInputBoxFilled: {
-    borderColor: '#0284C7',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
   },
   inputIcon: {
     marginRight: 6,
   },
   dateDisplayValue: {
     flex: 1,
-    fontSize: 13,
-    color: '#0F172A',
+    fontSize: 12.5,
+    color: THEME.colors.textPrimary,
     fontWeight: '700',
   },
   dateDisplayPlaceholder: {
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
     fontWeight: '500',
   },
   clearIcon: {
     padding: 3,
   },
 
-  /* Calendar Modal Styles */
-  calendarCard: {
-    width: '100%',
-    maxWidth: 350,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  calendarHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  calendarTitleContainer: {
-    alignItems: 'center',
-  },
-  calendarTargetLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#0284C7',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 2,
-  },
-  calendarMonthText: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  monthNavButton: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  weekDaysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 8,
-  },
-  weekDayText: {
-    width: 38,
-    textAlign: 'center',
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#94A3B8',
-  },
-  daysGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  dayCell: {
-    width: '14.28%',
-    height: 38,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginVertical: 2,
-  },
-  dayCellInner: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  selectedDayCell: {
-    backgroundColor: '#0284C7',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  dayText: {
-    fontSize: 13,
-    color: '#1E293B',
-    fontWeight: '600',
-  },
-  selectedDayText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-  },
-  calendarFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  calendarTodayBtn: {
-    backgroundColor: '#F0F9FF',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  calendarTodayText: {
-    color: '#0284C7',
-    fontWeight: '800',
-    fontSize: 12.5,
-  },
-  calendarCancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-  },
-  calendarCancelText: {
-    color: '#64748B',
-    fontWeight: '600',
-    fontSize: 12.5,
-  },
-
-  /* Table Section Styles */
+  /* Table Section */
   tableSection: {
-    marginTop: 6,
+    marginBottom: 10,
   },
   tableHeaderInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 10,
-    paddingHorizontal: 4,
+    paddingHorizontal: 2,
   },
   recordsCountText: {
-    fontSize: 12.5,
-    color: '#64748B',
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
     fontWeight: '600',
   },
-  tableContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
+  loadingContainer: {
+    paddingVertical: 36,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: THEME.colors.textSecondary,
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 12.5,
+    color: THEME.colors.textSecondary,
+    textAlign: 'center',
+    maxWidth: 240,
+    lineHeight: 17,
+  },
+  clearFilterBtn: {
+    marginTop: 14,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: THEME.radii.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+  },
+  clearFilterBtnText: {
+    color: THEME.colors.primary,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  tableContainer: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
     overflow: 'hidden',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    ...THEME.shadows.card,
   },
   tableHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: THEME.colors.surfaceMuted,
   },
   columnHeader: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: THEME.colors.borderLight,
   },
   tableRowLast: {
     borderBottomWidth: 0,
   },
   colSno: {
-    width: 36,
+    width: 24,
+    textAlign: 'center',
   },
   colDate: {
-    flex: 1,
+    flex: 1.3,
+    paddingLeft: 6,
   },
   colIn: {
-    width: 68,
-    alignItems: 'center',
+    flex: 1.1,
+    textAlign: 'center',
   },
   colOut: {
-    width: 68,
-    alignItems: 'center',
-  },
-  cellTimeIn: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#16A34A',
+    flex: 1.1,
     textAlign: 'center',
-  },
-  cellTimeInLate: {
-    color: '#DC2626',
-  },
-  cellTimeOut: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#94A3B8',
-    textAlign: 'center',
-  },
-  cellTimeOutActive: {
-    color: '#16A34A',
   },
   colAction: {
-    width: 60,
+    width: 54,
     alignItems: 'flex-end',
   },
   cellText: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
     fontWeight: '600',
   },
   cellDateText: {
-    fontSize: 13.5,
-    color: '#0F172A',
+    fontSize: 12,
+    color: THEME.colors.textPrimary,
+    fontWeight: '700',
+  },
+  cellTimeIn: {
+    fontSize: 11.5,
+    color: THEME.colors.success,
+    fontWeight: '700',
+  },
+  cellTimeInLate: {
+    color: THEME.colors.danger,
+  },
+  cellTimeOut: {
+    fontSize: 11.5,
+    color: THEME.colors.textMuted,
     fontWeight: '600',
   },
-  rowStatusBadge: {
-    paddingHorizontal: 9,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusBadgeNotIn: {
-    backgroundColor: '#FEF2F2',
-  },
-  statusBadgeIn: {
-    backgroundColor: '#ECFDF5',
-  },
-  statusBadgeOut: {
-    backgroundColor: '#FFFBEB',
-  },
-  rowStatusText: {
-    fontSize: 10.5,
-    fontWeight: '800',
-  },
-  statusTextNotIn: {
-    color: '#DC2626',
-  },
-  statusTextIn: {
-    color: '#15803D',
-  },
-  statusTextOut: {
-    color: '#B45309',
+  cellTimeOutActive: {
+    color: THEME.colors.primary,
+    fontWeight: '700',
   },
   viewButton: {
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 10,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: THEME.radii.pill,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
   },
   viewButtonText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
-    color: '#0284C7',
+    color: THEME.colors.primary,
   },
 
-  /* Empty State */
-  emptyContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 36,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 8,
-    elevation: 1,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 14,
-    marginBottom: 4,
-  },
-  emptySubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 18,
-    lineHeight: 18,
-  },
-  clearFilterBtn: {
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  clearFilterBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0284C7',
-  },
-
-  /* Modal Styles */
+  /* Calendar Modal */
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -1206,195 +1036,297 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  calendarCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    padding: 18,
+    ...THEME.shadows.modal,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  calendarTitleContainer: {
+    alignItems: 'center',
+  },
+  calendarTargetLabel: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: THEME.colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 2,
+  },
+  calendarMonthText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  monthNavButton: {
+    padding: 6,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+  },
+  weekDaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.surfaceSubtle,
+    paddingBottom: 6,
+  },
+  weekDayText: {
+    width: 36,
+    textAlign: 'center',
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  dayCell: {
+    width: '14.28%',
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginVertical: 1,
+  },
+  dayCellInner: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  selectedDayCell: {
+    backgroundColor: THEME.colors.primary,
+    ...THEME.shadows.card,
+  },
+  dayText: {
+    fontSize: 12.5,
+    color: THEME.colors.textPrimary,
+    fontWeight: '600',
+  },
+  selectedDayText: {
+    color: THEME.colors.textInverse,
+    fontWeight: '800',
+  },
+  calendarFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: THEME.colors.surfaceSubtle,
+  },
+  calendarTodayBtn: {
+    backgroundColor: THEME.colors.primarySurface,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: THEME.radii.xs,
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+  },
+  calendarTodayText: {
+    color: THEME.colors.primary,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+  calendarCancelBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
+  calendarCancelText: {
+    color: THEME.colors.textSecondary,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+
+  /* Detail Modal */
   modalContent: {
     width: '100%',
-    maxWidth: 390,
-    maxHeight: '88%',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 16,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 22,
-    elevation: 12,
-  },
-  modalScrollView: {
-    width: '100%',
-  },
-  modalScrollContent: {
-    paddingBottom: 12,
-  },
-  mapWebviewWrapper: {
-    height: 200,
-    width: '100%',
+    maxWidth: 360,
+    maxHeight: '85%',
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    overflow: 'hidden',
+    ...THEME.shadows.modal,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 12,
+    borderBottomColor: THEME.colors.surfaceSubtle,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   modalSubtitle: {
-    fontSize: 12.5,
-    color: '#64748B',
-    marginTop: 2,
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
+    marginTop: 1,
     fontWeight: '500',
   },
   modalCloseButton: {
     padding: 6,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.surfaceSubtle,
+  },
+  modalScrollView: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    padding: 18,
   },
   modalBody: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.lg,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 18,
+    borderColor: THEME.colors.surfaceMuted,
+    marginBottom: 16,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 9,
+    paddingVertical: 8,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: THEME.colors.borderLight,
   },
   detailRowLast: {
     borderBottomWidth: 0,
   },
   detailLabel: {
-    fontSize: 13,
-    color: '#64748B',
+    fontSize: 12,
     fontWeight: '600',
+    color: THEME.colors.textSecondary,
   },
   detailValue: {
-    fontSize: 13.5,
-    color: '#0F172A',
+    fontSize: 12.5,
     fontWeight: '700',
+    color: THEME.colors.textPrimary,
   },
   timeInOutBox: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
   },
   timeInOutLabel: {
     fontSize: 11,
-    fontWeight: '800',
-    color: '#64748B',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
   },
   timeInOutValue: {
-    fontSize: 13.5,
+    fontSize: 12.5,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   timeInOutDivider: {
     width: 1,
-    height: 22,
-    backgroundColor: '#E2E8F0',
-    marginHorizontal: 10,
+    height: 14,
+    backgroundColor: THEME.colors.surfaceMuted,
+    marginHorizontal: 8,
   },
-  modalDoneButton: {
-    backgroundColor: '#0284C7',
-    borderRadius: 14,
-    paddingVertical: 13,
-    alignItems: 'center',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
-    marginBottom: 4,
-  },
-  modalDoneButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  /* Map styles */
   mapContainer: {
-    borderRadius: 16,
+    borderRadius: THEME.radii.lg,
     overflow: 'hidden',
-    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.border,
+    marginBottom: 16,
   },
   mapLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: THEME.colors.card,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: THEME.colors.surfaceSubtle,
+    gap: 6,
   },
   mapLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#4F46E5',
-    letterSpacing: 0.2,
+    color: THEME.colors.textPrimary,
     flex: 1,
   },
   mapLegendIn: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 8,
+    backgroundColor: THEME.colors.successSurface,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 4,
+    borderRadius: 4,
   },
   mapLegendText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#16A34A',
+    color: THEME.colors.success,
   },
   mapLegendOut: {
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 8,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 8,
-    marginLeft: 4,
+    borderRadius: 4,
   },
   mapLegendTextOut: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
-    color: '#EA580C',
+    color: THEME.colors.primary,
+  },
+  mapWebviewWrapper: {
+    height: 200,
+    width: '100%',
   },
   map: {
-    width: '100%',
-    height: 200,
+    flex: 1,
   },
   mapPlaceholder: {
-    height: 100,
-    justifyContent: 'center',
+    paddingVertical: 24,
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
+    justifyContent: 'center',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.lg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceMuted,
     marginBottom: 16,
-    gap: 8,
+    gap: 6,
   },
   mapPlaceholderText: {
-    fontSize: 13,
-    color: '#94A3B8',
+    fontSize: 12,
+    color: THEME.colors.textMuted,
     fontWeight: '600',
+  },
+  modalDoneButton: {
+    backgroundColor: THEME.colors.slateHero,
+    borderRadius: THEME.radii.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...THEME.shadows.card,
+  },
+  modalDoneButtonText: {
+    color: THEME.colors.textInverse,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
 });

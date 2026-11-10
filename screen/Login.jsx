@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../services/api';
+import THEME from '../constants/theme';
 
 export default function Login({ onLogin, onSignUp }) {
   const [username, setUsername] = useState('');
@@ -43,7 +44,7 @@ export default function Login({ onLogin, onSignUp }) {
     const currentErrors = {};
 
     if (!username.trim()) {
-      currentErrors.username = 'Username or email is required';
+      currentErrors.username = 'Username or employee ID is required';
     } else if (username.trim().length < 3) {
       currentErrors.username = 'Must be at least 3 characters';
     }
@@ -83,43 +84,13 @@ export default function Login({ onLogin, onSignUp }) {
         return;
       }
 
-      // Offline manager fallback
-      if (username.trim().toLowerCase() === 'manager' && password === 'manager123') {
-        if (onLogin) {
-          onLogin({
-            id: 1,
-            name: 'Manager',
-            username: 'manager',
-            empId: 'MGR-001',
-            role: 'manager',
-            token: 'manager-token',
-          });
-        }
-        return;
-      }
-
-      const errorMsg = res.error || 'Invalid credentials or connection issue.';
+      const errorMsg = res.error || 'Invalid username or password. Please verify and try again.';
       setErrors((prev) => ({ ...prev, general: errorMsg }));
-      showAlert('Login Failed', errorMsg);
+      showAlert('Sign In Failed', errorMsg);
     } catch (error) {
-      // Offline manager fallback on connection error
-      if (username.trim().toLowerCase() === 'manager' && password === 'manager123') {
-        if (onLogin) {
-          onLogin({
-            id: 1,
-            name: 'Manager',
-            username: 'manager',
-            empId: 'MGR-001',
-            role: 'manager',
-            token: 'manager-token',
-          });
-        }
-        return;
-      }
-
-      const msg = error.message || 'Connection issue with backend server.';
+      const msg = error.message || 'Unable to connect to server. Please check your internet connection.';
       setErrors((prev) => ({ ...prev, general: msg }));
-      showAlert('Login Failed', msg);
+      showAlert('Connection Issue', msg);
     } finally {
       setIsLoading(false);
     }
@@ -143,10 +114,6 @@ export default function Login({ onLogin, onSignUp }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Ambient Decorative Glows */}
-          <View style={styles.ambientGlowOrange} pointerEvents="none" />
-          <View style={styles.ambientGlowCyan} pointerEvents="none" />
-
           {/* Header & Logo */}
           <View style={styles.headerContainer}>
             <View style={styles.logoCardWrapper}>
@@ -165,12 +132,12 @@ export default function Login({ onLogin, onSignUp }) {
             </View>
 
             <View style={styles.taglineBadge}>
-              <Text style={styles.taglineText}>ENTERPRISE ATTENDANCE</Text>
+              <Text style={styles.taglineText}>ENTERPRISE WORKFORCE</Text>
             </View>
 
             <Text style={styles.title}>Welcome Back</Text>
             <Text style={styles.subtitle}>
-              Sign in with your employee credentials to track your shifts
+              Sign in with your organization credentials to manage your daily attendance
             </Text>
           </View>
 
@@ -178,14 +145,14 @@ export default function Login({ onLogin, onSignUp }) {
           <View style={styles.formContainer}>
             {errors.general ? (
               <View style={styles.generalErrorBox}>
-                <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                <Ionicons name="alert-circle" size={18} color={THEME.colors.danger} />
                 <Text style={styles.generalErrorText}>{errors.general}</Text>
               </View>
             ) : null}
 
             {/* Username Input */}
             <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Username</Text>
+              <Text style={styles.inputLabel}>Username or ID</Text>
               <Pressable
                 onPress={() => usernameRef.current?.focus()}
                 style={[
@@ -197,21 +164,21 @@ export default function Login({ onLogin, onSignUp }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="person-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.username
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'username'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
                 <TextInput
                   ref={usernameRef}
                   style={styles.textInput}
-                  placeholder="Enter your username"
-                  placeholderTextColor="#94A3B8"
+                  placeholder="e.g. jdoe or EMP-001"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={username}
                   onChangeText={(text) => {
                     setUsername(text);
@@ -230,16 +197,16 @@ export default function Login({ onLogin, onSignUp }) {
                 {username.length > 0 && (
                   <TouchableOpacity
                     onPress={clearUsername}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     style={styles.rightActionIcon}
                   >
-                    <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                    <Ionicons name="close-circle" size={18} color={THEME.colors.textMuted} />
                   </TouchableOpacity>
                 )}
               </Pressable>
               {errors.username ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.username}</Text>
                 </View>
               ) : null}
@@ -259,21 +226,21 @@ export default function Login({ onLogin, onSignUp }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="lock-closed-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.password
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'password'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
                 <TextInput
                   ref={passwordRef}
                   style={styles.textInput}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#94A3B8"
+                  placeholder="Enter your secret password"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
@@ -291,19 +258,19 @@ export default function Login({ onLogin, onSignUp }) {
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={styles.rightActionIcon}
                 >
                   <Ionicons
                     name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={20}
-                    color="#64748B"
+                    size={19}
+                    color={THEME.colors.textSecondary}
                   />
                 </TouchableOpacity>
               </Pressable>
               {errors.password ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.password}</Text>
                 </View>
               ) : null}
@@ -313,11 +280,11 @@ export default function Login({ onLogin, onSignUp }) {
             <TouchableOpacity
               onPress={handleLogin}
               disabled={isLoading}
-              activeOpacity={0.88}
+              activeOpacity={0.85}
               style={styles.loginButtonTouchable}
             >
               <LinearGradient
-                colors={['#0284C7', '#0369A1']}
+                colors={[THEME.colors.primary, THEME.colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={[
@@ -326,14 +293,14 @@ export default function Login({ onLogin, onSignUp }) {
                 ]}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={THEME.colors.textInverse} size="small" />
                 ) : (
                   <View style={styles.buttonContent}>
                     <Text style={styles.loginButtonText}>Sign In</Text>
                     <Ionicons
                       name="arrow-forward"
                       size={18}
-                      color="#FFFFFF"
+                      color={THEME.colors.textInverse}
                       style={styles.buttonArrow}
                     />
                   </View>
@@ -352,6 +319,7 @@ export default function Login({ onLogin, onSignUp }) {
                   : Alert.alert('Sign Up', 'Redirect to registration screen.')
               }
               activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
             >
               <Text style={styles.signUpLink}>Create Account</Text>
             </TouchableOpacity>
@@ -365,61 +333,37 @@ export default function Login({ onLogin, onSignUp }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.background,
   },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 60,
-    position: 'relative',
-  },
-  ambientGlowOrange: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(234, 88, 12, 0.08)',
-  },
-  ambientGlowCyan: {
-    position: 'absolute',
-    top: 60,
-    left: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(2, 132, 199, 0.08)',
+    paddingHorizontal: THEME.spacing.xxl,
+    paddingTop: THEME.spacing.xxl,
+    paddingBottom: 48,
   },
   headerContainer: {
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: THEME.spacing.xxl,
   },
   logoCardWrapper: {
-    padding: 3,
-    borderRadius: 26,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 18,
-    elevation: 6,
-    marginBottom: 14,
+    borderRadius: THEME.radii.xl,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
+    marginBottom: THEME.spacing.md,
   },
   logoCard: {
-    width: 86,
-    height: 86,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
+    width: 82,
+    height: 82,
+    borderRadius: THEME.radii.lg,
+    backgroundColor: THEME.colors.card,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    padding: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    padding: 10,
   },
   logoImage: {
     width: '100%',
@@ -431,119 +375,111 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   techText: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: '900',
-    color: '#EA580C',
+    color: THEME.colors.primary,
     letterSpacing: 1.2,
   },
   sigaramText: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: '900',
-    color: '#0284C7',
+    color: THEME.colors.slateHero,
     letterSpacing: 1.2,
   },
   taglineBadge: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: THEME.colors.primarySurface,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginBottom: 12,
+    paddingVertical: 3,
+    borderRadius: THEME.radii.pill,
+    marginBottom: THEME.spacing.md,
   },
   taglineText: {
     fontSize: 10,
     fontWeight: '800',
-    color: '#0369A1',
+    color: THEME.colors.primary,
     letterSpacing: 1,
   },
   title: {
-    fontSize: 26,
+    fontSize: 25,
     fontWeight: '800',
-    color: '#0F172A',
-    marginBottom: 6,
+    color: THEME.colors.textPrimary,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13.5,
+    color: THEME.colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 19,
     maxWidth: 290,
   },
   formContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    paddingHorizontal: 22,
-    paddingVertical: 26,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    elevation: 4,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    ...THEME.shadows.card,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.border,
   },
   generalErrorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: THEME.colors.dangerSurface,
     borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 14,
+    borderColor: THEME.colors.dangerBorder,
+    borderRadius: THEME.radii.md,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    marginBottom: 18,
-    gap: 10,
+    paddingVertical: 10,
+    marginBottom: 16,
+    gap: 8,
   },
   generalErrorText: {
-    color: '#DC2626',
+    color: THEME.colors.danger,
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 17,
   },
   inputGroup: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   inputLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#334155',
-    marginBottom: 8,
+    color: THEME.colors.textSecondary,
+    marginBottom: 6,
     letterSpacing: 0.2,
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
     paddingHorizontal: 12,
-    height: 52,
+    height: 50,
   },
   inputWrapperFocused: {
-    borderColor: '#0284C7',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
   },
   inputWrapperError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FFF5F5',
+    borderColor: THEME.colors.danger,
+    backgroundColor: THEME.colors.dangerSurface,
   },
   inputIconContainer: {
-    width: 32,
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   textInput: {
     flex: 1,
-    fontSize: 15,
-    color: '#0F172A',
+    fontSize: 14.5,
+    color: THEME.colors.textPrimary,
     height: '100%',
     paddingVertical: 0,
     paddingHorizontal: 6,
@@ -555,62 +491,57 @@ const styles = StyleSheet.create({
   errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
-    paddingHorizontal: 4,
+    marginTop: 4,
+    paddingHorizontal: 2,
+    gap: 4,
   },
   errorText: {
-    color: '#EF4444',
-    fontSize: 12,
+    color: THEME.colors.danger,
+    fontSize: 11.5,
     fontWeight: '600',
-    marginLeft: 4,
   },
   loginButtonTouchable: {
-    borderRadius: 16,
+    borderRadius: THEME.radii.md,
     overflow: 'hidden',
     marginTop: 6,
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    elevation: 5,
+    ...THEME.shadows.primaryGlow,
   },
   loginGradientButton: {
-    height: 52,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: THEME.radii.md,
   },
   loginButtonDisabled: {
-    opacity: 0.7,
+    opacity: 0.65,
   },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   loginButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: THEME.colors.textInverse,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   buttonArrow: {
-    marginLeft: 8,
+    marginLeft: 6,
   },
   footerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 26,
+    marginTop: 24,
   },
   footerText: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13.5,
+    color: THEME.colors.textSecondary,
     fontWeight: '500',
   },
   signUpLink: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#0284C7',
+    color: THEME.colors.primary,
   },
 });
-

@@ -1,12 +1,5 @@
-import { Platform } from 'react-native';
-
-// API Service for connecting Expo frontend to Node.js backend
-// On Web: localhost:5001
-// On Native (Expo Go / Android / iOS): 192.168.1.8:5001
-export const API_BASE_URL =
-  Platform.OS === 'web'
-    ? 'http://localhost:5001/api'
-    : 'http://localhost:5001/api';
+// API Service for connecting Expo frontend to deployed Node.js backend on Render
+export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
 
 export const api = {
   // Authentication

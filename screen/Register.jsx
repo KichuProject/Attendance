@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../services/api';
+import THEME from '../constants/theme';
 
 export default function Register({ onRegister, onNavigateLogin }) {
   const [name, setName] = useState('');
@@ -90,7 +91,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
         const roleLabel = res.user.role === 'manager' ? 'Manager' : 'Employee';
         showAlert(
           'Registration Successful',
-          `Welcome, ${res.user.name}!\nYour ${idLabel} is: ${res.user.empId}\nRole: ${roleLabel}\n\nPlease sign in with your credentials.`,
+          `Welcome to Tech Sigaram, ${res.user.name}!\nYour ${idLabel} is: ${res.user.empId}\nRole: ${roleLabel}\n\nPlease sign in with your credentials.`,
           () => {
             if (onNavigateLogin) {
               onNavigateLogin();
@@ -98,7 +99,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
           }
         );
       } else {
-        const errorMsg = res.error || 'Registration failed';
+        const errorMsg = res.error || 'Registration failed. Please try a different username.';
         if (errorMsg.toLowerCase().includes('username')) {
           setErrors({ username: errorMsg, general: errorMsg });
         } else {
@@ -109,7 +110,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
     } catch (error) {
       const errorMsg = error.message || 'An error occurred during registration.';
       setErrors({ general: errorMsg });
-      showAlert('Registration Failed', errorMsg);
+      showAlert('Connection Issue', errorMsg);
     } finally {
       setIsLoading(false);
     }
@@ -126,10 +127,6 @@ export default function Register({ onRegister, onNavigateLogin }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Ambient Decorative Glows */}
-          <View style={styles.ambientGlowOrange} pointerEvents="none" />
-          <View style={styles.ambientGlowCyan} pointerEvents="none" />
-
           {/* Header */}
           <View style={styles.headerContainer}>
             {onNavigateLogin && (
@@ -137,10 +134,12 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 onPress={onNavigateLogin}
                 style={styles.backButton}
                 activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Ionicons name="arrow-back" size={20} color="#0F172A" />
+                <Ionicons name="arrow-back" size={20} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             )}
+
             <View style={styles.logoCardWrapper}>
               <View style={styles.logoCard}>
                 <Image
@@ -150,16 +149,19 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 />
               </View>
             </View>
+
             <View style={styles.companyRow}>
               <Text style={styles.techText}>TECH </Text>
               <Text style={styles.sigaramText}>SIGARAM</Text>
             </View>
+
             <View style={styles.taglineBadge}>
               <Text style={styles.taglineText}>EMPLOYEE ONBOARDING</Text>
             </View>
+
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>
-              Sign up to start tracking your daily attendance and shifts
+              Register your profile to start tracking shifts, check-ins, and leave requests
             </Text>
           </View>
 
@@ -167,12 +169,12 @@ export default function Register({ onRegister, onNavigateLogin }) {
           <View style={styles.formContainer}>
             {errors.general ? (
               <View style={styles.generalErrorBox}>
-                <Ionicons name="alert-circle" size={18} color="#DC2626" />
+                <Ionicons name="alert-circle" size={18} color={THEME.colors.danger} />
                 <Text style={styles.generalErrorText}>{errors.general}</Text>
               </View>
             ) : null}
 
-            {/* Role Selector */}
+            {/* Role Selector Segmented Control */}
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Register As</Text>
               <View style={styles.rolePickerRow}>
@@ -186,8 +188,8 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 >
                   <Ionicons
                     name="person"
-                    size={17}
-                    color={role === 'employee' ? '#0284C7' : '#64748B'}
+                    size={16}
+                    color={role === 'employee' ? THEME.colors.primary : THEME.colors.textSecondary}
                   />
                   <Text
                     style={[
@@ -209,8 +211,8 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 >
                   <Ionicons
                     name="briefcase"
-                    size={17}
-                    color={role === 'manager' ? '#EA580C' : '#64748B'}
+                    size={16}
+                    color={role === 'manager' ? THEME.colors.slateHero : THEME.colors.textSecondary}
                   />
                   <Text
                     style={[
@@ -238,21 +240,21 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="person-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.name
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'name'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
                 <TextInput
                   ref={nameRef}
                   style={styles.textInput}
-                  placeholder="Enter your full name"
-                  placeholderTextColor="#94A3B8"
+                  placeholder="e.g. Kishore Kumar"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={name}
                   onChangeText={(text) => {
                     setName(text);
@@ -268,7 +270,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
               </Pressable>
               {errors.name ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.name}</Text>
                 </View>
               ) : null}
@@ -288,21 +290,21 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="at-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.username
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'username'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
                 <TextInput
                   ref={usernameRef}
                   style={styles.textInput}
-                  placeholder="Choose a username"
-                  placeholderTextColor="#94A3B8"
+                  placeholder="Choose a unique username"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={username}
                   onChangeText={(text) => {
                     setUsername(text);
@@ -319,7 +321,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
               </Pressable>
               {errors.username ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.username}</Text>
                 </View>
               ) : null}
@@ -339,13 +341,13 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="lock-closed-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.password
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'password'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
@@ -353,7 +355,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
                   ref={passwordRef}
                   style={styles.textInput}
                   placeholder="At least 6 characters"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={password}
                   onChangeText={(text) => {
                     setPassword(text);
@@ -370,19 +372,19 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 />
                 <TouchableOpacity
                   onPress={() => setShowPassword(!showPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={styles.rightActionIcon}
                 >
                   <Ionicons
                     name={showPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={20}
-                    color="#64748B"
+                    size={19}
+                    color={THEME.colors.textSecondary}
                   />
                 </TouchableOpacity>
               </Pressable>
               {errors.password ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.password}</Text>
                 </View>
               ) : null}
@@ -402,13 +404,13 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 <View style={styles.inputIconContainer}>
                   <Ionicons
                     name="shield-checkmark-outline"
-                    size={19}
+                    size={18}
                     color={
                       errors.confirmPassword
-                        ? '#EF4444'
+                        ? THEME.colors.danger
                         : focusedInput === 'confirmPassword'
-                        ? '#0284C7'
-                        : '#64748B'
+                        ? THEME.colors.primary
+                        : THEME.colors.textSecondary
                     }
                   />
                 </View>
@@ -416,7 +418,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
                   ref={confirmPasswordRef}
                   style={styles.textInput}
                   placeholder="Re-enter password"
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={THEME.colors.textMuted}
                   value={confirmPassword}
                   onChangeText={(text) => {
                     setConfirmPassword(text);
@@ -434,19 +436,19 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 />
                 <TouchableOpacity
                   onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   style={styles.rightActionIcon}
                 >
                   <Ionicons
                     name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
-                    size={20}
-                    color="#64748B"
+                    size={19}
+                    color={THEME.colors.textSecondary}
                   />
                 </TouchableOpacity>
               </Pressable>
               {errors.confirmPassword ? (
                 <View style={styles.errorRow}>
-                  <Ionicons name="alert-circle" size={13} color="#EF4444" />
+                  <Ionicons name="alert-circle" size={13} color={THEME.colors.danger} />
                   <Text style={styles.errorText}>{errors.confirmPassword}</Text>
                 </View>
               ) : null}
@@ -456,27 +458,27 @@ export default function Register({ onRegister, onNavigateLogin }) {
             <TouchableOpacity
               onPress={handleRegister}
               disabled={isLoading}
-              activeOpacity={0.88}
+              activeOpacity={0.85}
               style={styles.registerButtonTouchable}
             >
               <LinearGradient
-                colors={['#0284C7', '#0369A1']}
+                colors={[THEME.colors.primary, THEME.colors.primaryDark]}
                 start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                end={{ x: 1, y: 1 }}
                 style={[
                   styles.registerGradientButton,
                   isLoading && styles.buttonDisabled,
                 ]}
               >
                 {isLoading ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <ActivityIndicator color={THEME.colors.textInverse} size="small" />
                 ) : (
                   <View style={styles.buttonContent}>
-                    <Text style={styles.registerButtonText}>Register</Text>
+                    <Text style={styles.registerButtonText}>Register Profile</Text>
                     <Ionicons
                       name="arrow-forward"
                       size={18}
-                      color="#FFFFFF"
+                      color={THEME.colors.textInverse}
                       style={styles.buttonArrow}
                     />
                   </View>
@@ -488,7 +490,11 @@ export default function Register({ onRegister, onNavigateLogin }) {
           {/* Footer - Navigate to Login */}
           <View style={styles.footerContainer}>
             <Text style={styles.footerText}>Already have an account? </Text>
-            <TouchableOpacity onPress={onNavigateLogin} activeOpacity={0.7}>
+            <TouchableOpacity
+              onPress={onNavigateLogin}
+              activeOpacity={0.7}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
+            >
               <Text style={styles.signInLink}>Sign In</Text>
             </TouchableOpacity>
           </View>
@@ -501,78 +507,50 @@ export default function Register({ onRegister, onNavigateLogin }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.background,
   },
   keyboardAvoid: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 60,
-    position: 'relative',
-  },
-  ambientGlowOrange: {
-    position: 'absolute',
-    top: -40,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(234, 88, 12, 0.08)',
-  },
-  ambientGlowCyan: {
-    position: 'absolute',
-    top: 60,
-    left: -60,
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(2, 132, 199, 0.08)',
+    paddingHorizontal: THEME.spacing.xxl,
+    paddingTop: THEME.spacing.lg,
+    paddingBottom: 48,
   },
   headerContainer: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: THEME.spacing.xl,
     position: 'relative',
   },
   backButton: {
     position: 'absolute',
     left: 0,
     top: 4,
-    padding: 9,
-    borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
+    padding: 8,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.card,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
     zIndex: 10,
   },
   logoCardWrapper: {
-    padding: 3,
-    borderRadius: 22,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.14,
-    shadowRadius: 16,
-    elevation: 5,
-    marginBottom: 10,
+    borderRadius: THEME.radii.lg,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
+    marginBottom: THEME.spacing.sm,
   },
   logoCard: {
-    width: 72,
-    height: 72,
-    borderRadius: 18,
-    backgroundColor: '#FFFFFF',
+    width: 68,
+    height: 68,
+    borderRadius: THEME.radii.md,
+    backgroundColor: THEME.colors.card,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    padding: 6,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    padding: 8,
   },
   logoImage: {
     width: '100%',
@@ -584,119 +562,151 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   techText: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
-    color: '#EA580C',
-    letterSpacing: 1.2,
+    color: THEME.colors.primary,
+    letterSpacing: 1.1,
   },
   sigaramText: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '900',
-    color: '#0284C7',
-    letterSpacing: 1.2,
+    color: THEME.colors.slateHero,
+    letterSpacing: 1.1,
   },
   taglineBadge: {
-    backgroundColor: '#F0F9FF',
+    backgroundColor: THEME.colors.primarySurface,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
     paddingHorizontal: 10,
     paddingVertical: 3,
-    borderRadius: 20,
-    marginBottom: 10,
+    borderRadius: THEME.radii.pill,
+    marginBottom: THEME.spacing.sm,
   },
   taglineText: {
     fontSize: 9.5,
     fontWeight: '800',
-    color: '#0369A1',
-    letterSpacing: 1,
+    color: THEME.colors.primary,
+    letterSpacing: 0.9,
   },
   title: {
-    fontSize: 24,
+    fontSize: 23,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     marginBottom: 4,
   },
   subtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
     textAlign: 'center',
     lineHeight: 18,
     maxWidth: 290,
   },
   formContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 26,
-    paddingHorizontal: 22,
-    paddingVertical: 24,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
-    elevation: 4,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    ...THEME.shadows.card,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.border,
   },
   generalErrorBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
+    backgroundColor: THEME.colors.dangerSurface,
     borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 14,
+    borderColor: THEME.colors.dangerBorder,
+    borderRadius: THEME.radii.md,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 10,
     marginBottom: 16,
-    gap: 10,
+    gap: 8,
   },
   generalErrorText: {
-    color: '#DC2626',
+    color: THEME.colors.danger,
     fontSize: 13,
     fontWeight: '600',
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 17,
   },
   inputGroup: {
     marginBottom: 15,
   },
   inputLabel: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '700',
-    color: '#334155',
-    marginBottom: 7,
+    color: THEME.colors.textSecondary,
+    marginBottom: 6,
     letterSpacing: 0.2,
+  },
+  rolePickerRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 2,
+  },
+  rolePickerOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 44,
+    borderRadius: THEME.radii.md,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+  },
+  rolePickerOptionActiveEmployee: {
+    backgroundColor: THEME.colors.primarySurface,
+    borderColor: THEME.colors.primary,
+    ...THEME.shadows.card,
+  },
+  rolePickerOptionActiveManager: {
+    backgroundColor: '#F1F5F9',
+    borderColor: THEME.colors.slateHero,
+    ...THEME.shadows.card,
+  },
+  rolePickerText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+  },
+  rolePickerTextActiveEmployee: {
+    color: THEME.colors.primary,
+    fontWeight: '800',
+  },
+  rolePickerTextActiveManager: {
+    color: THEME.colors.slateHero,
+    fontWeight: '800',
   },
   inputWrapper: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 15,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
     paddingHorizontal: 12,
     height: 50,
   },
   inputWrapperFocused: {
-    borderColor: '#0284C7',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
   },
   inputWrapperError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FFF5F5',
+    borderColor: THEME.colors.danger,
+    backgroundColor: THEME.colors.dangerSurface,
   },
   inputIconContainer: {
-    width: 30,
+    width: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   textInput: {
     flex: 1,
     fontSize: 14.5,
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     height: '100%',
     paddingVertical: 0,
     paddingHorizontal: 6,
@@ -708,46 +718,42 @@ const styles = StyleSheet.create({
   errorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 5,
-    paddingHorizontal: 4,
+    marginTop: 4,
+    paddingHorizontal: 2,
+    gap: 4,
   },
   errorText: {
-    color: '#EF4444',
-    fontSize: 12,
+    color: THEME.colors.danger,
+    fontSize: 11.5,
     fontWeight: '600',
-    marginLeft: 4,
   },
   registerButtonTouchable: {
-    borderRadius: 16,
+    borderRadius: THEME.radii.md,
     overflow: 'hidden',
-    marginTop: 8,
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 12,
-    elevation: 5,
+    marginTop: 6,
+    ...THEME.shadows.primaryGlow,
   },
   registerGradientButton: {
-    height: 52,
+    height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 16,
+    borderRadius: THEME.radii.md,
   },
   buttonDisabled: {
-    opacity: 0.7,
+    opacity: 0.65,
   },
   buttonContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   registerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+    color: THEME.colors.textInverse,
+    fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.3,
   },
   buttonArrow: {
-    marginLeft: 8,
+    marginLeft: 6,
   },
   footerContainer: {
     flexDirection: 'row',
@@ -756,61 +762,13 @@ const styles = StyleSheet.create({
     marginTop: 22,
   },
   footerText: {
-    fontSize: 14,
-    color: '#64748B',
+    fontSize: 13.5,
+    color: THEME.colors.textSecondary,
     fontWeight: '500',
   },
   signInLink: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#0284C7',
-  },
-  rolePickerRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 2,
-  },
-  rolePickerOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-  },
-  rolePickerOptionActiveEmployee: {
-    backgroundColor: '#F0F9FF',
-    borderColor: '#0284C7',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  rolePickerOptionActiveManager: {
-    backgroundColor: '#FFF7ED',
-    borderColor: '#EA580C',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  rolePickerText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  rolePickerTextActiveEmployee: {
-    color: '#0284C7',
-    fontWeight: '800',
-  },
-  rolePickerTextActiveManager: {
-    color: '#EA580C',
-    fontWeight: '800',
+    color: THEME.colors.primary,
   },
 });

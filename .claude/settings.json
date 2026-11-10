@@ -1,5 +1,13 @@
 {
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:20128",
+    "ANTHROPIC_AUTH_TOKEN": "sk-30035961ed4ba827-66d8f3-977cffc0",
+    "ANTHROPIC_API_KEY": "",
+    "ANTHROPIC_MODEL": "geminipro",
+    "ANTHROPIC_SMALL_FAST_MODEL": "geminipro"
+  },
   "enabledPlugins": {
     "expo@claude-plugins-official": true
   }
 }
+

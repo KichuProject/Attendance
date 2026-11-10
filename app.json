@@ -10,6 +10,11 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.techsigaram.attendance",
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",

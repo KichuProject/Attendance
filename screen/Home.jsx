@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { api } from '../services/api';
+import THEME from '../constants/theme';
 
 const isInTimeAfterTen = (time) => {
   if (!time) return false;
@@ -32,6 +33,24 @@ const isInTimeAfterTen = (time) => {
   return hour > 10 || (hour === 10 && minute > 0);
 };
 
+const parseTimeStringToDate = (time) => {
+  if (!time) return null;
+  const match = String(time).trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\s*(AM|PM))?$/i);
+  if (!match) return null;
+
+  let hour = Number(match[1]);
+  const minute = Number(match[2]);
+  const second = match[3] ? Number(match[3]) : 0;
+  const period = match[4]?.toUpperCase();
+
+  if (period === 'AM' && hour === 12) hour = 0;
+  if (period === 'PM' && hour !== 12) hour += 12;
+
+  const d = new Date();
+  d.setHours(hour, minute, second, 0);
+  return d;
+};
+
 export default function Home({
   user,
   onLogout,
@@ -41,10 +60,10 @@ export default function Home({
   addLeaveRequest,
 }) {
   let displayName = user?.name || user?.username || 'Employee';
-  displayName=displayName.charAt(0).toUpperCase() + displayName.slice(1);
+  displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
   const [totalDays, setTotalDays] = useState(0);
-  const [todayStatus, setTodayStatus] = useState('NOT IN'); 
+  const [todayStatus, setTodayStatus] = useState('NOT IN');
 
   const [isInPressed, setIsInPressed] = useState(false);
   const [isOutPressed, setIsOutPressed] = useState(false);
@@ -57,10 +76,102 @@ export default function Home({
   const [coords, setCoords] = useState(null);
   const [outCoords, setOutCoords] = useState(null);
 
-  // Tab
+  // Live Timer State (ticks every 1 second when shift is active)
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    let interval = null;
+    if (todayStatus === 'IN' && inTime) {
+      interval = setInterval(() => {
+        setNow(Date.now());
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [todayStatus, inTime]);
+
+  const calculateShiftStats = () => {
+    if (!inTime) {
+      return {
+        formattedDuration: '0h 00m',
+        formattedSeconds: '00s',
+        isOvertime: false,
+        extraFormatted: null,
+        remainingFormatted: 'Standard 8h shift',
+        totalMinutes: 0,
+      };
+    }
+
+    const startDate = parseTimeStringToDate(inTime);
+    if (!startDate) {
+      return {
+        formattedDuration: '0h 00m',
+        formattedSeconds: '00s',
+        isOvertime: false,
+        extraFormatted: null,
+        remainingFormatted: 'Standard 8h shift',
+        totalMinutes: 0,
+      };
+    }
+
+    let endDate = new Date(now);
+    if (todayStatus === 'OUT' && outTime) {
+      const parsedOut = parseTimeStringToDate(outTime);
+      if (parsedOut) {
+        endDate = parsedOut;
+      }
+    }
+
+    let diffMs = endDate.getTime() - startDate.getTime();
+    if (diffMs < 0) {
+      diffMs += 24 * 60 * 60 * 1000;
+    }
+
+    const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+
+    const formattedDuration = `${hours}h ${String(minutes).padStart(2, '0')}m`;
+    const formattedSeconds = `${String(seconds).padStart(2, '0')}s`;
+
+    const standardMinutes = 8 * 60; // 8 hours standard work day
+    const currentMinutes = hours * 60 + minutes;
+
+    let isOvertime = false;
+    let extraFormatted = null;
+    let remainingFormatted = null;
+
+    if (currentMinutes > standardMinutes) {
+      isOvertime = true;
+      const extraTotal = currentMinutes - standardMinutes;
+      const extraH = Math.floor(extraTotal / 60);
+      const extraM = extraTotal % 60;
+      extraFormatted = `+${extraH}h ${String(extraM).padStart(2, '0')}m Extra`;
+    } else {
+      const remainingTotal = standardMinutes - currentMinutes;
+      const remH = Math.floor(remainingTotal / 60);
+      const remM = remainingTotal % 60;
+      remainingFormatted = `${remH}h ${String(remM).padStart(2, '0')}m to 8h`;
+    }
+
+    return {
+      formattedDuration,
+      formattedSeconds,
+      isOvertime,
+      extraFormatted,
+      remainingFormatted,
+      totalMinutes: currentMinutes,
+    };
+  };
+
+  const shiftStats = calculateShiftStats();
+
+  // Active Tab: 'attendance' or 'leave'
   const [activeTab, setActiveTab] = useState('attendance');
 
-  // Leave Request form
+  // Leave Request Form State
   const leaveTypes = ['Sick Leave', 'Casual Leave', 'Emergency Leave', 'Other'];
   const [leaveType, setLeaveType] = useState('Sick Leave');
   const [leaveFrom, setLeaveFrom] = useState('');
@@ -68,14 +179,14 @@ export default function Home({
   const [leaveReason, setLeaveReason] = useState('');
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
 
-  // Employee sub-tab: 'apply' (New Request) or 'myRequests' (View My Requests)
+  // Employee Sub-Tab: 'apply' or 'myRequests'
   const [employeeLeaveTab, setEmployeeLeaveTab] = useState('apply');
   const [myLeaveRequests, setMyLeaveRequests] = useState(null);
   const [isMyLeaveLoading, setIsMyLeaveLoading] = useState(false);
 
-  // Calendar Picker for Leave Form (From / To)
+  // Calendar Picker for Leave Form
   const [calendarVisible, setCalendarVisible] = useState(false);
-  const [calendarTarget, setCalendarTarget] = useState('from'); // 'from' | 'to'
+  const [calendarTarget, setCalendarTarget] = useState('from');
   const [viewDate, setViewDate] = useState(new Date());
 
   const getTodayMidnight = () => {
@@ -103,7 +214,6 @@ export default function Home({
     if (target === 'from') {
       return today;
     }
-    // target === 'to'
     const fromD = parseDate(leaveFrom);
     if (fromD && fromD > today) {
       return fromD;
@@ -282,6 +392,7 @@ export default function Home({
       console.error('Update status error:', err);
     }
   };
+
   const loadTodayAttendance = async () => {
     if (!user?.id) return;
     try {
@@ -333,7 +444,7 @@ export default function Home({
 
     setIsLocating(true);
     const currentTime = getCurrentFormattedTime();
-    let latStr = null; 
+    let latStr = null;
     let lonStr = null;
 
     try {
@@ -402,7 +513,7 @@ export default function Home({
 
   const handleOutPress = async () => {
     if (!isInPressed) {
-      Alert.alert('Warning', 'You cannot press OUT before pressing IN!');
+      Alert.alert('Warning', 'You cannot clock OUT before clocking IN!');
       return;
     }
     if (isOutPressed || isPunchedOutLoading) return;
@@ -451,7 +562,15 @@ export default function Home({
     if (setRecords) {
       setRecords((prev) =>
         prev.map((item, idx) =>
-          idx === 0 ? { ...item, status: 'OUT', outTime: currentTime, outLatitude: outLatStr || '--', outLongitude: outLonStr || '--' } : item
+          idx === 0
+            ? {
+                ...item,
+                status: 'OUT',
+                outTime: currentTime,
+                outLatitude: outLatStr || '--',
+                outLongitude: outLonStr || '--',
+              }
+            : item
         )
       );
     }
@@ -524,14 +643,16 @@ export default function Home({
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
       >
-        {/* Top Tech Sigaram Brand & Logout Bar (No Box) */}
+        {/* Top Executive Brand & Logout Bar */}
         <View style={styles.topBrandRow}>
           <View style={styles.brandLeftRow}>
-            <Image
-              source={require('../assets/logo.png')}
-              style={styles.brandLogoImage}
-              resizeMode="contain"
-            />
+            <View style={styles.brandLogoBox}>
+              <Image
+                source={require('../assets/logo.png')}
+                style={styles.brandLogoImage}
+                resizeMode="contain"
+              />
+            </View>
             <View style={styles.brandTitleCol}>
               <View style={styles.brandNameRow}>
                 <Text style={styles.brandTechText}>TECH </Text>
@@ -546,14 +667,15 @@ export default function Home({
               onPress={onLogout}
               style={styles.logoutButton}
               activeOpacity={0.75}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="log-out-outline" size={16} color="#DC2626" style={styles.logoutIcon} />
+              <Ionicons name="log-out-outline" size={16} color={THEME.colors.danger} style={styles.logoutIcon} />
               <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
           )}
         </View>
 
-        {/* User Greeting & Date Bar */}
+        {/* User Profile Bar */}
         <View style={styles.welcomeBar}>
           <View style={styles.welcomeTextCol}>
             <Text style={styles.greetingText}>Welcome back,</Text>
@@ -564,10 +686,16 @@ export default function Home({
                   <Text style={styles.empBadgeText}>{user.empId}</Text>
                 </View>
               ) : null}
+              <View style={[styles.roleBadge, user?.role === 'manager' && styles.managerBadge]}>
+                <Text style={[styles.roleBadgeText, user?.role === 'manager' && styles.managerBadgeText]}>
+                  {user?.role === 'manager' ? 'Manager' : 'Employee'}
+                </Text>
+              </View>
             </View>
           </View>
+
           <View style={styles.dateBadge}>
-            <Ionicons name="calendar" size={13} color="#0284C7" style={{ marginRight: 5 }} />
+            <Ionicons name="calendar-outline" size={13} color={THEME.colors.primary} style={{ marginRight: 5 }} />
             <Text style={styles.dateBadgeText}>
               {new Date().toLocaleDateString('en-GB', {
                 weekday: 'short',
@@ -586,14 +714,15 @@ export default function Home({
             activeOpacity={0.8}
           >
             <Ionicons
-              name="checkmark-circle-outline"
+              name="time-outline"
               size={16}
-              color={activeTab === 'attendance' ? '#FFFFFF' : '#64748B'}
+              color={activeTab === 'attendance' ? THEME.colors.textInverse : THEME.colors.textSecondary}
             />
             <Text style={[styles.tabText, activeTab === 'attendance' && styles.tabTextActive]}>
               Attendance
             </Text>
           </TouchableOpacity>
+
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'leave' && styles.tabButtonLeaveActive]}
             onPress={() => setActiveTab('leave')}
@@ -602,7 +731,7 @@ export default function Home({
             <Ionicons
               name="document-text-outline"
               size={16}
-              color={activeTab === 'leave' ? '#FFFFFF' : '#64748B'}
+              color={activeTab === 'leave' ? THEME.colors.textInverse : THEME.colors.textSecondary}
             />
             <Text style={[styles.tabText, activeTab === 'leave' && styles.tabTextActive]}>
               Leave Request
@@ -613,12 +742,12 @@ export default function Home({
         {/* ── ATTENDANCE TAB ── */}
         {activeTab === 'attendance' && (
           <>
-            {/* Status & Total Days KPI Card */}
+            {/* KPI Summary Card */}
             <View style={styles.infoCard}>
               <View style={styles.leftColumn}>
                 <View style={styles.kpiHeaderRow}>
                   <View style={styles.kpiIconBoxDays}>
-                    <Ionicons name="calendar-outline" size={14} color="#0284C7" />
+                    <Ionicons name="calendar" size={13} color={THEME.colors.primary} />
                   </View>
                   <Text style={styles.label}>TOTAL ATTENDANCE</Text>
                 </View>
@@ -633,7 +762,7 @@ export default function Home({
               <View style={styles.rightColumn}>
                 <View style={styles.kpiHeaderRow}>
                   <View style={styles.kpiIconBoxStatus}>
-                    <Ionicons name="pulse-outline" size={14} color="#059669" />
+                    <Ionicons name="pulse" size={13} color={THEME.colors.success} />
                   </View>
                   <Text style={styles.label}>TODAY'S STATUS</Text>
                 </View>
@@ -667,7 +796,86 @@ export default function Home({
               </View>
             </View>
 
-            {/* IN / OUT Buttons */}
+            {/* Live Elapsed Shift Timer & Overtime Card */}
+            <View style={styles.shiftTimerCard}>
+              <View style={styles.shiftTimerTopRow}>
+                <View style={styles.shiftTimerHeaderLeft}>
+                  <View style={[
+                    styles.timerIconBox,
+                    todayStatus === 'IN' && styles.timerIconBoxActive,
+                    todayStatus === 'OUT' && styles.timerIconBoxOut,
+                  ]}>
+                    <Ionicons
+                      name="timer-outline"
+                      size={14}
+                      color={todayStatus === 'IN' ? THEME.colors.success : todayStatus === 'OUT' ? THEME.colors.primary : THEME.colors.textSecondary}
+                    />
+                  </View>
+                  <Text style={styles.shiftTimerTitle}>Shift Duration</Text>
+                </View>
+
+                <View style={[
+                  styles.shiftTimerStatusBadge,
+                  todayStatus === 'IN' && styles.shiftTimerStatusBadgeActive,
+                  todayStatus === 'OUT' && styles.shiftTimerStatusBadgeOut,
+                ]}>
+                  {todayStatus === 'IN' && <View style={styles.liveTimerDot} />}
+                  <Text style={[
+                    styles.shiftTimerStatusBadgeText,
+                    todayStatus === 'IN' && styles.shiftTimerStatusBadgeTextActive,
+                    todayStatus === 'OUT' && styles.shiftTimerStatusBadgeTextOut,
+                  ]}>
+                    {todayStatus === 'IN' ? 'LIVE TRACKING' : todayStatus === 'OUT' ? 'COMPLETED' : 'NOT STARTED'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.shiftTimerMainRow}>
+                <View style={styles.shiftTimerValueCol}>
+                  <View style={styles.shiftTimerValueRow}>
+                    <Text style={styles.shiftTimerHoursMins}>
+                      {shiftStats.formattedDuration}
+                    </Text>
+                    {todayStatus === 'IN' && (
+                      <Text style={styles.shiftTimerSeconds}>
+                        {shiftStats.formattedSeconds}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.shiftTimerSubtitle}>
+                    {todayStatus === 'IN'
+                      ? `Clocked in at ${inTime || '--'}`
+                      : todayStatus === 'OUT'
+                      ? `Total Shift: ${inTime} → ${outTime}`
+                      : 'Clock in to begin tracking work hours'}
+                  </Text>
+                </View>
+
+                {/* Overtime / Standard Shift Badge */}
+                {shiftStats.isOvertime ? (
+                  <View style={styles.extraHoursBadge}>
+                    <View style={styles.extraHoursHeader}>
+                      <Ionicons name="flame" size={12} color={THEME.colors.primary} />
+                      <Text style={styles.extraHoursLabel}>EXTRA WORKED</Text>
+                    </View>
+                    <Text style={styles.extraHoursValue}>
+                      {shiftStats.extraFormatted}
+                    </Text>
+                  </View>
+                ) : (
+                  todayStatus === 'IN' && (
+                    <View style={styles.standardHoursBadge}>
+                      <Text style={styles.standardHoursLabel}>STANDARD (8H)</Text>
+                      <Text style={styles.standardHoursRemaining}>
+                        {shiftStats.remainingFormatted}
+                      </Text>
+                    </View>
+                  )
+                )}
+              </View>
+            </View>
+
+            {/* IN / OUT Punch Buttons */}
             <View style={styles.actionButtonsContainer}>
               <TouchableOpacity
                 style={[
@@ -689,7 +897,7 @@ export default function Home({
                       isInPressed && (isLateIn ? styles.buttonPressedLateText : styles.buttonPressedLightGreenText),
                     ]}
                   >
-                    {isInPressed ? 'IN ✓' : 'IN'}
+                    {isInPressed ? 'IN ✓' : 'Punch IN'}
                   </Text>
                 )}
               </TouchableOpacity>
@@ -702,7 +910,7 @@ export default function Home({
                   isOutPressed && styles.buttonPressedLightGreen,
                 ]}
                 onPress={handleOutPress}
-                disabled={isOutPressed || isPunchedOutLoading}
+                disabled={isOutPressed || isPunchedOutLoading || !isInPressed}
                 activeOpacity={0.8}
               >
                 {isPunchedOutLoading ? (
@@ -716,53 +924,72 @@ export default function Home({
                       isOutPressed && styles.buttonPressedLightGreenText,
                     ]}
                   >
-                    {isOutPressed ? 'OUT ✓' : 'OUT'}
+                    {isOutPressed ? 'OUT ✓' : 'Punch OUT'}
                   </Text>
                 )}
               </TouchableOpacity>
             </View>
 
-            {/* IN / OUT Time Cards */}
+            {/* IN / OUT Digital Time Card */}
             <View style={styles.timeCardContainer}>
               <View style={styles.timeCard}>
                 <View style={styles.timeHeader}>
-                  <Ionicons name="enter-outline" size={16} color={inTime && isLateIn ? '#DC2626' : '#16A34A'} />
-                  <Text style={styles.timeLabel}>IN Time</Text>
+                  <Ionicons
+                    name="enter-outline"
+                    size={16}
+                    color={inTime && isLateIn ? THEME.colors.danger : THEME.colors.success}
+                  />
+                  <Text style={styles.timeLabel}>Clock In</Text>
                 </View>
-                <Text style={[
-                  styles.timeValue,
-                  inTime && styles.timeValueActive,
-                  inTime && isLateIn && styles.timeValueLate,
-                ]}>
+                <Text
+                  style={[
+                    styles.timeValue,
+                    inTime && styles.timeValueActive,
+                    inTime && isLateIn && styles.timeValueLate,
+                  ]}
+                >
                   {inTime || '--:--'}
                 </Text>
+                {inTime && isLateIn && (
+                  <View style={styles.latePill}>
+                    <Text style={styles.latePillText}>Late</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.timeCardDivider} />
 
               <View style={styles.timeCard}>
                 <View style={styles.timeHeader}>
-                  <Ionicons name="exit-outline" size={16} color={outTime ? '#16A34A' : '#EA580C'} />
-                  <Text style={styles.timeLabel}>OUT Time</Text>
+                  <Ionicons
+                    name="exit-outline"
+                    size={16}
+                    color={outTime ? THEME.colors.success : THEME.colors.primary}
+                  />
+                  <Text style={styles.timeLabel}>Clock Out</Text>
                 </View>
-                <Text style={[
-                  styles.timeValue,
-                  outTime && styles.timeValueOut,
-                ]}>
+                <Text
+                  style={[
+                    styles.timeValue,
+                    outTime && styles.timeValueOut,
+                  ]}
+                >
                   {outTime || '--:--'}
                 </Text>
               </View>
             </View>
 
+            {/* GPS Location Pill */}
             {coords && coords.latitude && coords.longitude && (
               <View style={styles.locationBadgeRow}>
-                <Ionicons name="location" size={13} color="#4F46E5" />
+                <Ionicons name="location" size={13} color={THEME.colors.primary} />
                 <Text style={styles.locationBadgeText}>
-                  Location Captured: {coords.latitude}, {coords.longitude}
+                  GPS Captured: {coords.latitude}, {coords.longitude}
                 </Text>
               </View>
             )}
 
+            {/* Attendance Report CTA */}
             <TouchableOpacity
               style={styles.reportButton}
               onPress={onNavigateReport}
@@ -770,14 +997,14 @@ export default function Home({
             >
               <View style={styles.reportButtonLeft}>
                 <View style={styles.reportIconContainer}>
-                  <Ionicons name="document-text-outline" size={22} color="#4F46E5" />
+                  <Ionicons name="bar-chart-outline" size={20} color={THEME.colors.primary} />
                 </View>
                 <View>
-                  <Text style={styles.reportButtonTitle}>Attendance Report</Text>
-                  <Text style={styles.reportButtonSubtitle}>View full history and records</Text>
+                  <Text style={styles.reportButtonTitle}>Attendance Records</Text>
+                  <Text style={styles.reportButtonSubtitle}>View comprehensive history and locations</Text>
                 </View>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={18} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           </>
         )}
@@ -785,27 +1012,27 @@ export default function Home({
         {/* ── LEAVE REQUEST TAB ── */}
         {activeTab === 'leave' && (
           <>
-            {/* MANAGER VIEW — incoming requests list */}
             {user?.role === 'manager' ? (
+              /* MANAGER VIEW — Incoming Requests */
               <View style={styles.leaveCard}>
                 <View style={styles.leaveCardHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="list-outline" size={18} color="#0284C7" />
+                    <Ionicons name="list-outline" size={18} color={THEME.colors.slateHero} />
                     <Text style={styles.leaveCardTitle}>Employee Leave Requests</Text>
                   </View>
                   <TouchableOpacity onPress={loadLeaveRequests} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Ionicons name="refresh-outline" size={18} color="#0284C7" />
+                    <Ionicons name="refresh-outline" size={18} color={THEME.colors.primary} />
                   </TouchableOpacity>
                 </View>
 
                 {isLeaveLoading && dbLeaveRequests === null ? (
                   <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                    <ActivityIndicator size="small" color="#0284C7" />
+                    <ActivityIndicator size="small" color={THEME.colors.primary} />
                   </View>
                 ) : (dbLeaveRequests !== null ? dbLeaveRequests : leaveRequests).length === 0 ? (
                   <View style={styles.leaveEmptyBox}>
-                    <Ionicons name="document-outline" size={32} color="#CBD5E1" />
-                    <Text style={styles.leaveEmptyText}>No leave requests yet</Text>
+                    <Ionicons name="document-outline" size={32} color={THEME.colors.surfaceMuted} />
+                    <Text style={styles.leaveEmptyText}>No pending leave requests</Text>
                   </View>
                 ) : (
                   (dbLeaveRequests !== null ? dbLeaveRequests : leaveRequests).map((req) => {
@@ -814,22 +1041,22 @@ export default function Home({
                       <View key={req.id} style={styles.leaveRequestItem}>
                         <View style={styles.leaveRequestTop}>
                           <View style={styles.leaveRequestNameRow}>
-                            <Ionicons name="person-circle-outline" size={18} color="#0284C7" />
+                            <Ionicons name="person-circle-outline" size={18} color={THEME.colors.slateHero} />
                             <Text style={styles.leaveRequestName}>{req.name}</Text>
                             <Text style={styles.leaveRequestEmpId}>{req.empId}</Text>
                           </View>
                           <View
                             style={[
                               styles.leaveStatusBadge,
-                              req.status === 'Approved' && { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
-                              req.status === 'Rejected' && { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+                              req.status === 'Approved' && { backgroundColor: THEME.colors.successSurface, borderColor: THEME.colors.successBorder },
+                              req.status === 'Rejected' && { backgroundColor: THEME.colors.dangerSurface, borderColor: THEME.colors.dangerBorder },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.leaveStatusText,
-                                req.status === 'Approved' && { color: '#16A34A' },
-                                req.status === 'Rejected' && { color: '#DC2626' },
+                                req.status === 'Approved' && { color: THEME.colors.success },
+                                req.status === 'Rejected' && { color: THEME.colors.danger },
                               ]}
                             >
                               {req.status}
@@ -838,15 +1065,15 @@ export default function Home({
                         </View>
                         <View style={styles.leaveRequestDetails}>
                           <View style={styles.leaveRequestDetailRow}>
-                            <Ionicons name="medical-outline" size={12} color="#EA580C" />
+                            <Ionicons name="bookmark-outline" size={13} color={THEME.colors.primary} />
                             <Text style={styles.leaveRequestDetailText}>{req.leaveType}</Text>
                           </View>
                           <View style={styles.leaveRequestDetailRow}>
-                            <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                            <Ionicons name="calendar-outline" size={13} color={THEME.colors.textSecondary} />
                             <Text style={styles.leaveRequestDetailText}>{req.from} → {req.to}</Text>
                           </View>
                           <View style={styles.leaveRequestDetailRow}>
-                            <Ionicons name="chatbubble-ellipses-outline" size={12} color="#64748B" />
+                            <Ionicons name="chatbubble-outline" size={13} color={THEME.colors.textSecondary} />
                             <Text style={styles.leaveRequestDetailText} numberOfLines={2}>{req.reason}</Text>
                           </View>
                         </View>
@@ -876,7 +1103,7 @@ export default function Home({
             ) : (
               /* EMPLOYEE VIEW */
               <View>
-                {/* Toggle button above form: [New Request] vs [Show Leave Requests] */}
+                {/* Segmented control: New Request vs My Requests */}
                 <View style={styles.employeeSubToggleRow}>
                   <TouchableOpacity
                     style={[
@@ -889,7 +1116,7 @@ export default function Home({
                     <Ionicons
                       name="add-circle-outline"
                       size={15}
-                      color={employeeLeaveTab === 'apply' ? '#EA580C' : '#64748B'}
+                      color={employeeLeaveTab === 'apply' ? THEME.colors.primary : THEME.colors.textSecondary}
                     />
                     <Text
                       style={[
@@ -915,7 +1142,7 @@ export default function Home({
                     <Ionicons
                       name="documents-outline"
                       size={15}
-                      color={employeeLeaveTab === 'myRequests' ? '#EA580C' : '#64748B'}
+                      color={employeeLeaveTab === 'myRequests' ? THEME.colors.primary : THEME.colors.textSecondary}
                     />
                     <Text
                       style={[
@@ -923,7 +1150,7 @@ export default function Home({
                         employeeLeaveTab === 'myRequests' && styles.employeeSubToggleTextActive,
                       ]}
                     >
-                      Show Leave Requests
+                      My Requests
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -933,12 +1160,12 @@ export default function Home({
                   <View style={styles.leaveCard}>
                     <View style={styles.leaveCardHeader}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Ionicons name="calendar-outline" size={18} color="#EA580C" />
-                        <Text style={styles.leaveCardTitle}>New Leave Request</Text>
+                        <Ionicons name="calendar-outline" size={18} color={THEME.colors.primary} />
+                        <Text style={styles.leaveCardTitle}>Apply for Leave</Text>
                       </View>
                     </View>
 
-                    {/* Leave Type */}
+                    {/* Leave Type Chips */}
                     <Text style={styles.leaveFieldLabel}>Leave Type</Text>
                     <View style={styles.leaveTypeRow}>
                       {leaveTypes.map((lt) => (
@@ -955,7 +1182,7 @@ export default function Home({
                       ))}
                     </View>
 
-                    {/* Date Pickers (From Date & To Date with Calendar Popup) */}
+                    {/* Date Pickers */}
                     <View style={styles.dateInputsRow}>
                       <View style={styles.dateInputWrapper}>
                         <Text style={styles.leaveFieldLabel}>From Date</Text>
@@ -967,7 +1194,7 @@ export default function Home({
                           <Ionicons
                             name="calendar-outline"
                             size={16}
-                            color={leaveFrom ? '#EA580C' : '#64748B'}
+                            color={leaveFrom ? THEME.colors.primary : THEME.colors.textSecondary}
                             style={styles.inputIcon}
                           />
                           <Text
@@ -981,7 +1208,7 @@ export default function Home({
                               onPress={() => setLeaveFrom('')}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                              <Ionicons name="close-circle" size={16} color={THEME.colors.textMuted} />
                             </TouchableOpacity>
                           ) : null}
                         </TouchableOpacity>
@@ -997,7 +1224,7 @@ export default function Home({
                           <Ionicons
                             name="calendar-outline"
                             size={16}
-                            color={leaveTo ? '#EA580C' : '#64748B'}
+                            color={leaveTo ? THEME.colors.primary : THEME.colors.textSecondary}
                             style={styles.inputIcon}
                           />
                           <Text
@@ -1011,7 +1238,7 @@ export default function Home({
                               onPress={() => setLeaveTo('')}
                               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                             >
-                              <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                              <Ionicons name="close-circle" size={16} color={THEME.colors.textMuted} />
                             </TouchableOpacity>
                           ) : null}
                         </TouchableOpacity>
@@ -1022,8 +1249,8 @@ export default function Home({
                     <Text style={styles.leaveFieldLabel}>Reason</Text>
                     <TextInput
                       style={[styles.leaveInput, styles.leaveTextArea]}
-                      placeholder="Briefly explain your reason..."
-                      placeholderTextColor="#94A3B8"
+                      placeholder="Briefly describe the reason for your leave..."
+                      placeholderTextColor={THEME.colors.textMuted}
                       value={leaveReason}
                       onChangeText={setLeaveReason}
                       multiline
@@ -1036,38 +1263,38 @@ export default function Home({
                       style={styles.leaveSubmitButton}
                       onPress={handleLeaveSubmit}
                       disabled={leaveSubmitting}
-                      activeOpacity={0.8}
+                      activeOpacity={0.85}
                     >
                       {leaveSubmitting ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <>
+                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                           <Ionicons name="paper-plane-outline" size={16} color="#FFFFFF" style={{ marginRight: 8 }} />
                           <Text style={styles.leaveSubmitText}>Submit Request</Text>
-                        </>
+                        </View>
                       )}
                     </TouchableOpacity>
                   </View>
                 ) : (
-                  /* Employee's Own Submitted Requests List */
+                  /* Employee's Own Requests List */
                   <View style={styles.leaveCard}>
                     <View style={styles.leaveCardHeader}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <Ionicons name="documents-outline" size={18} color="#EA580C" />
+                        <Ionicons name="documents-outline" size={18} color={THEME.colors.primary} />
                         <Text style={styles.leaveCardTitle}>My Leave Requests</Text>
                       </View>
                       <TouchableOpacity onPress={loadMyLeaveRequests} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                        <Ionicons name="refresh-outline" size={18} color="#EA580C" />
+                        <Ionicons name="refresh-outline" size={18} color={THEME.colors.primary} />
                       </TouchableOpacity>
                     </View>
 
                     {isMyLeaveLoading && myLeaveRequests === null ? (
                       <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-                        <ActivityIndicator size="small" color="#EA580C" />
+                        <ActivityIndicator size="small" color={THEME.colors.primary} />
                       </View>
                     ) : (myLeaveRequests || []).length === 0 ? (
                       <View style={styles.leaveEmptyBox}>
-                        <Ionicons name="document-text-outline" size={32} color="#CBD5E1" />
+                        <Ionicons name="document-text-outline" size={32} color={THEME.colors.surfaceMuted} />
                         <Text style={styles.leaveEmptyText}>No leave requests submitted yet</Text>
                         <TouchableOpacity
                           style={styles.applyFirstLeaveBtn}
@@ -1081,21 +1308,21 @@ export default function Home({
                         <View key={req.id} style={styles.leaveRequestItem}>
                           <View style={styles.leaveRequestTop}>
                             <View style={styles.leaveRequestNameRow}>
-                              <Ionicons name="medical-outline" size={16} color="#EA580C" />
+                              <Ionicons name="bookmark" size={15} color={THEME.colors.primary} />
                               <Text style={styles.leaveRequestName}>{req.leaveType}</Text>
                             </View>
                             <View
                               style={[
                                 styles.leaveStatusBadge,
-                                req.status === 'Approved' && { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' },
-                                req.status === 'Rejected' && { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+                                req.status === 'Approved' && { backgroundColor: THEME.colors.successSurface, borderColor: THEME.colors.successBorder },
+                                req.status === 'Rejected' && { backgroundColor: THEME.colors.dangerSurface, borderColor: THEME.colors.dangerBorder },
                               ]}
                             >
                               <Text
                                 style={[
                                   styles.leaveStatusText,
-                                  req.status === 'Approved' && { color: '#16A34A' },
-                                  req.status === 'Rejected' && { color: '#DC2626' },
+                                  req.status === 'Approved' && { color: THEME.colors.success },
+                                  req.status === 'Rejected' && { color: THEME.colors.danger },
                                 ]}
                               >
                                 {req.status}
@@ -1104,11 +1331,11 @@ export default function Home({
                           </View>
                           <View style={styles.leaveRequestDetails}>
                             <View style={styles.leaveRequestDetailRow}>
-                              <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                              <Ionicons name="calendar-outline" size={12} color={THEME.colors.textSecondary} />
                               <Text style={styles.leaveRequestDetailText}>{req.from} → {req.to}</Text>
                             </View>
                             <View style={styles.leaveRequestDetailRow}>
-                              <Ionicons name="chatbubble-ellipses-outline" size={12} color="#64748B" />
+                              <Ionicons name="chatbubble-outline" size={12} color={THEME.colors.textSecondary} />
                               <Text style={styles.leaveRequestDetailText} numberOfLines={2}>{req.reason}</Text>
                             </View>
                           </View>
@@ -1138,7 +1365,7 @@ export default function Home({
             style={styles.calendarCard}
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Header: Month and Navigation */}
+            {/* Calendar Header */}
             <View style={styles.calendarHeader}>
               <TouchableOpacity
                 onPress={prevMonth}
@@ -1149,15 +1376,11 @@ export default function Home({
                 disabled={isPrevMonthDisabled()}
                 activeOpacity={0.7}
               >
-                <Ionicons
-                  name="chevron-back"
-                  size={20}
-                  color={isPrevMonthDisabled() ? '#CBD5E1' : '#0F172A'}
-                />
+                <Ionicons name="chevron-back" size={18} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
               <View style={styles.calendarTitleContainer}>
                 <Text style={styles.calendarTargetLabel}>
-                  {calendarTarget === 'from' ? 'Select From Date' : 'Select To Date'}
+                  {calendarTarget === 'from' ? 'Select Start Date' : 'Select End Date'}
                 </Text>
                 <Text style={styles.calendarMonthText}>
                   {monthNames[cMonth]} {cYear}
@@ -1168,11 +1391,11 @@ export default function Home({
                 style={styles.monthNavButton}
                 activeOpacity={0.7}
               >
-                <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+                <Ionicons name="chevron-forward" size={18} color={THEME.colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            {/* Weekday Names Row */}
+            {/* Weekdays */}
             <View style={styles.weekDaysRow}>
               {weekDays.map((wd) => (
                 <Text key={wd} style={styles.weekDayText}>
@@ -1181,7 +1404,7 @@ export default function Home({
               ))}
             </View>
 
-            {/* Calendar Days Grid */}
+            {/* Days Grid */}
             <View style={styles.daysGrid}>
               {blanks.map((b) => (
                 <View key={`b-${b}`} style={styles.dayCell} />
@@ -1219,7 +1442,7 @@ export default function Home({
               })}
             </View>
 
-            {/* Calendar Footer Buttons */}
+            {/* Calendar Footer */}
             <View style={styles.calendarFooter}>
               <TouchableOpacity
                 style={[
@@ -1257,21 +1480,20 @@ export default function Home({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: THEME.colors.background,
   },
   container: {
     paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingTop: 14,
     paddingBottom: 36,
   },
 
-  /* Top Company Brand Header (No Box) */
+  /* Top Company Brand Header */
   topBrandRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 2,
+    paddingVertical: 4,
     marginBottom: 16,
   },
   brandLeftRow: {
@@ -1279,9 +1501,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  brandLogoBox: {
+    width: 38,
+    height: 38,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.card,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...THEME.shadows.card,
+    padding: 4,
+  },
   brandLogoImage: {
-    width: 40,
-    height: 40,
+    width: '100%',
+    height: '100%',
   },
   brandTitleCol: {
     justifyContent: 'center',
@@ -1291,41 +1525,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   brandTechText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
-    color: '#EA580C',
+    color: THEME.colors.primary,
     letterSpacing: 0.8,
   },
   brandSigaramText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '900',
-    color: '#0284C7',
+    color: THEME.colors.slateHero,
     letterSpacing: 0.8,
   },
   brandSubtitle: {
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.8,
+    color: THEME.colors.textMuted,
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
-    marginTop: 1,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: '#FEF2F2',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.dangerSurface,
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: THEME.colors.dangerBorder,
   },
   logoutIcon: {
     marginRight: 4,
   },
   logoutText: {
-    color: '#DC2626',
-    fontSize: 12.5,
+    color: THEME.colors.danger,
+    fontSize: 12,
     fontWeight: '700',
   },
 
@@ -1334,80 +1567,129 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
-    paddingHorizontal: 2,
+    marginBottom: 16,
   },
   welcomeTextCol: {
     flex: 1,
   },
   greetingText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '600',
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
     marginBottom: 2,
   },
   userNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     flexWrap: 'wrap',
   },
   username: {
-    fontSize: 22,
+    fontSize: 21,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     letterSpacing: -0.3,
   },
   empBadge: {
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 8,
-    paddingVertical: 2.5,
-    borderRadius: 8,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: THEME.radii.xs,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
   },
   empBadgeText: {
-    color: '#0284C7',
-    fontSize: 11,
+    color: THEME.colors.primary,
+    fontSize: 10.5,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+  },
+  roleBadge: {
+    backgroundColor: THEME.colors.surfaceSubtle,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: THEME.radii.xs,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+  },
+  roleBadgeText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+  },
+  managerBadge: {
+    backgroundColor: '#F1F5F9',
+    borderColor: THEME.colors.slateDark,
+  },
+  managerBadgeText: {
+    color: THEME.colors.slateHero,
+    fontWeight: '800',
   },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-    borderRadius: 12,
+    backgroundColor: THEME.colors.card,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: THEME.radii.sm,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
   },
   dateBadgeText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#334155',
+    color: THEME.colors.textSecondary,
+  },
+
+  /* Tab Switcher */
+  tabRow: {
+    flexDirection: 'row',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    padding: 3,
+    marginBottom: 16,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+  },
+  tabButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: THEME.radii.sm,
+  },
+  tabButtonActive: {
+    backgroundColor: THEME.colors.slateHero,
+    ...THEME.shadows.card,
+  },
+  tabButtonLeaveActive: {
+    backgroundColor: THEME.colors.primary,
+    ...THEME.shadows.card,
+  },
+  tabText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+  },
+  tabTextActive: {
+    color: THEME.colors.textInverse,
   },
 
   /* KPI Summary Card */
   infoCard: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    paddingHorizontal: 20,
-    paddingVertical: 18,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 14,
-    elevation: 3,
-    marginBottom: 18,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+    marginBottom: 16,
     alignItems: 'center',
   },
   leftColumn: {
@@ -1421,29 +1703,29 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   kpiIconBoxDays: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    backgroundColor: '#F0F9FF',
+    width: 20,
+    height: 20,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.primarySurface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   kpiIconBoxStatus: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    backgroundColor: '#ECFDF5',
+    width: 20,
+    height: 20,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.successSurface,
     justifyContent: 'center',
     alignItems: 'center',
   },
   label: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#64748B',
-    letterSpacing: 0.4,
+    color: THEME.colors.textSecondary,
+    letterSpacing: 0.3,
   },
   daysValueRow: {
     flexDirection: 'row',
@@ -1451,219 +1733,374 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   totalDays: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '900',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     letterSpacing: -0.5,
   },
   daysUnit: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: THEME.colors.textMuted,
   },
   kpiDivider: {
     width: 1,
-    height: 44,
-    backgroundColor: '#E2E8F0',
-    marginHorizontal: 12,
+    height: 40,
+    backgroundColor: THEME.colors.surfaceMuted,
+    marginHorizontal: 10,
   },
 
   /* Status Badge & Indicator Dot */
   statusBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: THEME.radii.pill,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
   },
   statusBadgeNotIn: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
+    backgroundColor: THEME.colors.dangerSurface,
+    borderColor: THEME.colors.dangerBorder,
   },
   statusBadgeIn: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#A7F3D0',
+    backgroundColor: THEME.colors.successSurface,
+    borderColor: THEME.colors.successBorder,
   },
   statusBadgeOut: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
+    backgroundColor: THEME.colors.warningSurface,
+    borderColor: THEME.colors.warningBorder,
   },
   statusDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   statusDotNotIn: {
-    backgroundColor: '#DC2626',
+    backgroundColor: THEME.colors.danger,
   },
   statusDotIn: {
-    backgroundColor: '#16A34A',
+    backgroundColor: THEME.colors.success,
   },
   statusDotOut: {
-    backgroundColor: '#D97706',
+    backgroundColor: THEME.colors.warning,
   },
   statusText: {
-    fontSize: 11.5,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
   statusTextNotIn: {
-    color: '#DC2626',
+    color: THEME.colors.danger,
   },
   statusTextIn: {
-    color: '#15803D',
+    color: THEME.colors.success,
   },
   statusTextOut: {
-    color: '#B45309',
+    color: THEME.colors.warning,
   },
 
-  /* Punch Action Buttons (IN / OUT) */
+  /* Live Elapsed Shift Timer Card */
+  shiftTimerCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+    marginBottom: 14,
+  },
+  shiftTimerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  shiftTimerHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+  },
+  timerIconBox: {
+    width: 22,
+    height: 22,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  timerIconBoxActive: {
+    backgroundColor: THEME.colors.successSurface,
+  },
+  timerIconBoxOut: {
+    backgroundColor: THEME.colors.primarySurface,
+  },
+  shiftTimerTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: THEME.colors.textSecondary,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  shiftTimerStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: THEME.radii.pill,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    gap: 5,
+  },
+  shiftTimerStatusBadgeActive: {
+    backgroundColor: THEME.colors.successSurface,
+    borderWidth: 1,
+    borderColor: THEME.colors.successBorder,
+  },
+  shiftTimerStatusBadgeOut: {
+    backgroundColor: THEME.colors.primarySurface,
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+  },
+  liveTimerDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: THEME.colors.success,
+  },
+  shiftTimerStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: THEME.colors.textSecondary,
+    letterSpacing: 0.3,
+  },
+  shiftTimerStatusBadgeTextActive: {
+    color: THEME.colors.success,
+  },
+  shiftTimerStatusBadgeTextOut: {
+    color: THEME.colors.primary,
+  },
+  shiftTimerMainRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  shiftTimerValueCol: {
+    flex: 1,
+  },
+  shiftTimerValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 5,
+  },
+  shiftTimerHoursMins: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.5,
+  },
+  shiftTimerSeconds: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.textMuted,
+  },
+  shiftTimerSubtitle: {
+    fontSize: 11.5,
+    color: THEME.colors.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+
+  /* Extra Hours (Overtime) & Standard Badges */
+  extraHoursBadge: {
+    backgroundColor: THEME.colors.primarySurface,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'flex-end',
+  },
+  extraHoursHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 2,
+  },
+  extraHoursLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: THEME.colors.primary,
+    letterSpacing: 0.3,
+  },
+  extraHoursValue: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: THEME.colors.primary,
+  },
+  standardHoursBadge: {
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'flex-end',
+  },
+  standardHoursLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: THEME.colors.textSecondary,
+    letterSpacing: 0.3,
+    marginBottom: 2,
+  },
+  standardHoursRemaining: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+
+  /* Action Buttons (IN / OUT) */
   actionButtonsContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 14,
   },
   actionButton: {
     flex: 1,
-    height: 52,
-    borderRadius: 16,
+    height: 50,
+    borderRadius: THEME.radii.lg,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1.5,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    ...THEME.shadows.card,
   },
   actionButtonText: {
-    fontSize: 15.5,
+    fontSize: 15,
     fontWeight: '800',
-    letterSpacing: 0.6,
+    letterSpacing: 0.4,
   },
   inButton: {
-    backgroundColor: '#16A34A',
-    borderColor: '#15803D',
-    shadowColor: '#16A34A',
-    shadowOpacity: 0.25,
+    backgroundColor: THEME.colors.success,
+    borderColor: '#047857',
   },
   inButtonText: {
-    color: '#FFFFFF',
+    color: THEME.colors.textInverse,
   },
   outButton: {
-    backgroundColor: '#EA580C',
-    borderColor: '#C2410C',
-    shadowColor: '#EA580C',
-    shadowOpacity: 0.25,
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primaryDark,
   },
   outButtonText: {
-    color: '#FFFFFF',
+    color: THEME.colors.textInverse,
   },
   outButtonInactive: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    shadowOpacity: 0,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderColor: THEME.colors.surfaceMuted,
     elevation: 0,
+    shadowOpacity: 0,
   },
   outButtonInactiveText: {
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
   },
   buttonPressedLightGreen: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
-    shadowOpacity: 0.05,
+    backgroundColor: THEME.colors.successSurface,
+    borderColor: THEME.colors.successBorder,
   },
   buttonPressedLightGreenText: {
-    color: '#15803D',
+    color: THEME.colors.success,
   },
   buttonPressedLate: {
-    backgroundColor: '#FFEDD5',
-    borderColor: '#FB923C',
-    shadowOpacity: 0.05,
+    backgroundColor: THEME.colors.dangerSurface,
+    borderColor: THEME.colors.dangerBorder,
   },
   buttonPressedLateText: {
-    color: '#C2410C',
+    color: THEME.colors.danger,
   },
 
-  /* IN / OUT Digital Time Cards */
+  /* IN / OUT Digital Time Card */
   timeCardContainer: {
     flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingVertical: 14,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 14,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    borderColor: THEME.colors.border,
+    marginBottom: 12,
+    ...THEME.shadows.card,
     alignItems: 'center',
   },
   timeCard: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   timeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 5,
+    gap: 5,
+    marginBottom: 4,
   },
   timeLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
   },
   timeValue: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: '800',
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
     letterSpacing: 0.2,
   },
   timeValueActive: {
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   timeValueLate: {
-    color: '#DC2626',
+    color: THEME.colors.danger,
   },
   timeValueOut: {
-    fontSize: 17,
+    color: THEME.colors.primary,
+  },
+  latePill: {
+    marginTop: 3,
+    backgroundColor: THEME.colors.dangerSurface,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: THEME.radii.pill,
+  },
+  latePillText: {
+    fontSize: 9.5,
     fontWeight: '800',
-    color: '#16A34A',
-    letterSpacing: 0.2,
+    color: THEME.colors.danger,
   },
   timeCardDivider: {
     width: 1,
-    height: 38,
-    backgroundColor: '#E2E8F0',
+    height: 36,
+    backgroundColor: THEME.colors.surfaceMuted,
     marginHorizontal: 8,
   },
 
-  /* Location indicator */
+  /* Location Indicator */
   locationBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#F0F9FF',
-    paddingVertical: 7,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    marginBottom: 14,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: THEME.radii.sm,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
   },
   locationBadgeText: {
-    fontSize: 12,
-    color: '#0369A1',
+    fontSize: 11.5,
+    color: THEME.colors.primary,
     fontWeight: '700',
   },
 
@@ -1672,122 +2109,71 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 2,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
   },
   reportButtonLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
   },
   reportIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#F0F9FF',
+    width: 40,
+    height: 40,
+    borderRadius: THEME.radii.md,
+    backgroundColor: THEME.colors.primarySurface,
     borderWidth: 1,
-    borderColor: '#BAE6FD',
+    borderColor: THEME.colors.primaryBorder,
     justifyContent: 'center',
     alignItems: 'center',
   },
   reportButtonTitle: {
-    fontSize: 15.5,
+    fontSize: 14.5,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
     letterSpacing: -0.2,
   },
   reportButtonSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
+    fontSize: 11.5,
+    color: THEME.colors.textSecondary,
     marginTop: 2,
     fontWeight: '500',
   },
 
-  /* Tab Switcher */
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 16,
-    padding: 4,
-    marginBottom: 18,
-    gap: 4,
-  },
-  tabButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 13,
-  },
-  tabButtonActive: {
-    backgroundColor: '#0284C7',
-    shadowColor: '#0284C7',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  tabButtonLeaveActive: {
-    backgroundColor: '#EA580C',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  tabTextActive: {
-    color: '#FFFFFF',
-  },
-
-  /* Leave Request Card */
+  /* Leave Request Hub */
   leaveCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 20,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
   },
   leaveCardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 18,
-    paddingBottom: 14,
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: THEME.colors.surfaceSubtle,
   },
   leaveCardTitle: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   leaveFieldLabel: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#475569',
+    color: THEME.colors.textSecondary,
     marginBottom: 6,
-    marginTop: 12,
+    marginTop: 10,
     letterSpacing: 0.2,
   },
   leaveTypeRow: {
@@ -1797,84 +2183,79 @@ const styles = StyleSheet.create({
   },
   leaveTypeChip: {
     paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
+    paddingVertical: 6,
+    borderRadius: THEME.radii.pill,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
   },
   leaveTypeChipActive: {
-    backgroundColor: '#FFF7ED',
-    borderColor: '#EA580C',
+    backgroundColor: THEME.colors.primarySurface,
+    borderColor: THEME.colors.primary,
   },
   leaveTypeChipText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
   },
   leaveTypeChipTextActive: {
-    color: '#EA580C',
+    color: THEME.colors.primary,
   },
   leaveInput: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 14,
-    color: '#0F172A',
-    fontWeight: '600',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13.5,
+    color: THEME.colors.textPrimary,
+    fontWeight: '500',
   },
   leaveTextArea: {
-    minHeight: 90,
-    paddingTop: 11,
+    minHeight: 84,
+    paddingTop: 10,
   },
   leaveSubmitButton: {
-    marginTop: 20,
-    backgroundColor: '#EA580C',
-    borderRadius: 14,
-    paddingVertical: 14,
+    marginTop: 16,
+    backgroundColor: THEME.colors.primary,
+    borderRadius: THEME.radii.md,
+    paddingVertical: 13,
     alignItems: 'center',
-    flexDirection: 'row',
     justifyContent: 'center',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    ...THEME.shadows.primaryGlow,
   },
   leaveSubmitText: {
-    color: '#FFFFFF',
-    fontSize: 15,
+    color: THEME.colors.textInverse,
+    fontSize: 14.5,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
 
-  /* Manager leave request list */
+  /* Manager Leave Request List */
   leaveEmptyBox: {
     alignItems: 'center',
-    paddingVertical: 32,
-    gap: 10,
+    paddingVertical: 28,
+    gap: 8,
   },
   leaveEmptyText: {
-    fontSize: 14,
-    color: '#94A3B8',
+    fontSize: 13.5,
+    color: THEME.colors.textMuted,
     fontWeight: '600',
   },
   leaveRequestItem: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 14,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceMuted,
   },
   leaveRequestTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   leaveRequestNameRow: {
     flexDirection: 'row',
@@ -1883,88 +2264,90 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   leaveRequestName: {
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   leaveRequestEmpId: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#0284C7',
-    backgroundColor: '#F0F9FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 6,
+    color: THEME.colors.primary,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
   },
   leaveStatusBadge: {
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 10,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: THEME.radii.xs,
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: THEME.colors.primaryBorder,
   },
   leaveStatusText: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#EA580C',
+    color: THEME.colors.primary,
   },
   leaveRequestDetails: {
-    gap: 5,
-    marginBottom: 12,
+    gap: 4,
+    marginBottom: 10,
   },
   leaveRequestDetailRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: 6,
   },
   leaveRequestDetailText: {
-    fontSize: 12.5,
-    color: '#475569',
+    fontSize: 12,
+    color: THEME.colors.textSecondary,
     fontWeight: '500',
     flex: 1,
   },
   leaveActionRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   leaveApproveBtn: {
     flex: 1,
-    backgroundColor: '#ECFDF5',
-    borderRadius: 10,
-    paddingVertical: 9,
+    backgroundColor: THEME.colors.successSurface,
+    borderRadius: THEME.radii.xs,
+    paddingVertical: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: THEME.colors.successBorder,
   },
   leaveApproveBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
-    color: '#15803D',
+    color: THEME.colors.success,
   },
   leaveRejectBtn: {
     flex: 1,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    paddingVertical: 9,
+    backgroundColor: THEME.colors.dangerSurface,
+    borderRadius: THEME.radii.xs,
+    paddingVertical: 8,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FECACA',
+    borderColor: THEME.colors.dangerBorder,
   },
   leaveRejectBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
-    color: '#DC2626',
+    color: THEME.colors.danger,
   },
 
-  /* Employee Sub-toggle (New Request / Show Leave Requests) */
+  /* Employee Sub-toggle */
   employeeSubToggleRow: {
     flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 14,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
     padding: 3,
-    marginBottom: 14,
+    marginBottom: 12,
     gap: 4,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
   },
   employeeSubToggleBtn: {
     flex: 1,
@@ -1972,31 +2355,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    paddingVertical: 9,
-    borderRadius: 11,
+    paddingVertical: 8,
+    borderRadius: THEME.radii.sm,
   },
   employeeSubToggleBtnActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
   },
   employeeSubToggleText: {
-    fontSize: 12.5,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
   },
   employeeSubToggleTextActive: {
-    color: '#EA580C',
+    color: THEME.colors.primary,
     fontWeight: '800',
   },
 
-  /* Date inputs in Leave Form */
+  /* Date inputs */
   dateInputsRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
     marginTop: 2,
   },
   dateInputWrapper: {
@@ -2005,53 +2384,48 @@ const styles = StyleSheet.create({
   dateInputBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    paddingHorizontal: 12,
-    height: 48,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.md,
+    borderWidth: 1,
+    borderColor: THEME.colors.surfaceMuted,
+    paddingHorizontal: 10,
+    height: 46,
   },
   dateInputBoxFilled: {
-    borderColor: '#EA580C',
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
+    borderColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.card,
+    ...THEME.shadows.card,
   },
   inputIcon: {
     marginRight: 6,
   },
   dateDisplayValue: {
     flex: 1,
-    fontSize: 13,
-    color: '#0F172A',
+    fontSize: 12.5,
+    color: THEME.colors.textPrimary,
     fontWeight: '700',
   },
   dateDisplayPlaceholder: {
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
     fontWeight: '500',
   },
 
-  /* Empty state button */
   applyFirstLeaveBtn: {
-    marginTop: 8,
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
+    marginTop: 6,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: THEME.radii.sm,
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: THEME.colors.primaryBorder,
   },
   applyFirstLeaveBtnText: {
-    color: '#EA580C',
-    fontSize: 12.5,
+    color: THEME.colors.primary,
+    fontSize: 12,
     fontWeight: '800',
   },
 
-  /* Calendar Modal Styles */
+  /* Calendar Modal */
   calendarModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -2061,66 +2435,60 @@ const styles = StyleSheet.create({
   },
   calendarCard: {
     width: '100%',
-    maxWidth: 350,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    elevation: 10,
+    maxWidth: 340,
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.xl,
+    padding: 18,
+    ...THEME.shadows.modal,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.border,
   },
   calendarHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   calendarTitleContainer: {
     alignItems: 'center',
   },
   calendarTargetLabel: {
-    fontSize: 11,
+    fontSize: 10.5,
     fontWeight: '800',
-    color: '#EA580C',
+    color: THEME.colors.primary,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 2,
   },
   calendarMonthText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '800',
-    color: '#0F172A',
+    color: THEME.colors.textPrimary,
   },
   monthNavButton: {
-    padding: 8,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
+    padding: 6,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: THEME.colors.surfaceMuted,
   },
   monthNavButtonDisabled: {
     opacity: 0.35,
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
   },
   weekDaysRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    marginBottom: 8,
+    marginBottom: 6,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    paddingBottom: 8,
+    borderBottomColor: THEME.colors.surfaceSubtle,
+    paddingBottom: 6,
   },
   weekDayText: {
-    width: 38,
+    width: 36,
     textAlign: 'center',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '700',
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
   },
   daysGrid: {
     flexDirection: 'row',
@@ -2128,33 +2496,29 @@ const styles = StyleSheet.create({
   },
   dayCell: {
     width: '14.28%',
-    height: 38,
+    height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    marginVertical: 2,
+    marginVertical: 1,
   },
   dayCellInner: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
   selectedDayCell: {
-    backgroundColor: '#EA580C',
-    shadowColor: '#EA580C',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 3,
+    backgroundColor: THEME.colors.primary,
+    ...THEME.shadows.card,
   },
   dayText: {
-    fontSize: 13,
-    color: '#1E293B',
+    fontSize: 12.5,
+    color: THEME.colors.textPrimary,
     fontWeight: '600',
   },
   selectedDayText: {
-    color: '#FFFFFF',
+    color: THEME.colors.textInverse,
     fontWeight: '800',
   },
   disabledDayCell: {
@@ -2164,46 +2528,46 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   disabledDayText: {
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
     textDecorationLine: 'line-through',
   },
   calendarFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 14,
+    marginTop: 14,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
+    borderTopColor: THEME.colors.surfaceSubtle,
   },
   calendarTodayBtn: {
-    backgroundColor: '#FFF7ED',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 10,
+    backgroundColor: THEME.colors.primarySurface,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: THEME.radii.xs,
     borderWidth: 1,
-    borderColor: '#FED7AA',
+    borderColor: THEME.colors.primaryBorder,
   },
   calendarTodayBtnDisabled: {
     opacity: 0.45,
-    backgroundColor: '#F1F5F9',
-    borderColor: '#E2E8F0',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderColor: THEME.colors.surfaceMuted,
   },
   calendarTodayText: {
-    color: '#EA580C',
+    color: THEME.colors.primary,
     fontWeight: '800',
-    fontSize: 12.5,
+    fontSize: 12,
   },
   calendarTodayTextDisabled: {
-    color: '#94A3B8',
+    color: THEME.colors.textMuted,
   },
   calendarCancelBtn: {
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
   },
   calendarCancelText: {
-    color: '#64748B',
+    color: THEME.colors.textSecondary,
     fontWeight: '600',
-    fontSize: 12.5,
+    fontSize: 12,
   },
 });
