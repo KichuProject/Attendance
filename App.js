@@ -15,6 +15,7 @@ export default function App() {
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
+  const [selectedEmployeeForReport, setSelectedEmployeeForReport] = useState(null);
 
   const sessionTimerRef = useRef(null);
 
@@ -143,7 +144,10 @@ export default function App() {
         <Home
           user={userData}
           onLogout={handleLogout}
-          onNavigateReport={() => setCurrentScreen('report')}
+          onNavigateReport={(targetEmp) => {
+            setSelectedEmployeeForReport(targetEmp || null);
+            setCurrentScreen('report');
+          }}
           records={attendanceRecords}
           setRecords={setAttendanceRecords}
           leaveRequests={leaveRequests}
@@ -153,8 +157,12 @@ export default function App() {
       {currentScreen === 'report' && (
         <Report
           user={userData}
+          initialEmployee={selectedEmployeeForReport}
           records={attendanceRecords}
-          onBack={() => setCurrentScreen('home')}
+          onBack={() => {
+            setSelectedEmployeeForReport(null);
+            setCurrentScreen('home');
+          }}
         />
       )}
     </SafeAreaProvider>

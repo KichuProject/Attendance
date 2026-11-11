@@ -51,6 +51,42 @@ const parseTimeStringToDate = (time) => {
   return d;
 };
 
+const parseCoordNumber = (val) => {
+  if (val === null || val === undefined || val === '--') return null;
+  if (typeof val === 'number') return isNaN(val) ? null : val;
+  const str = String(val).trim();
+  const match = str.match(/([\d.]+)°?\s*([NSEW])?/i);
+  if (!match) {
+    const num = parseFloat(str);
+    return isNaN(num) ? null : num;
+  }
+  const numVal = parseFloat(match[1]);
+  if (isNaN(numVal)) return null;
+  const dir = match[2]?.toUpperCase();
+  return (dir === 'S' || dir === 'W') ? -numVal : numVal;
+};
+
+const resolveAreaName = async (lat, lon) => {
+  try {
+    const latNum = parseCoordNumber(lat);
+    const lonNum = parseCoordNumber(lon);
+    if (latNum === null || lonNum === null) return null;
+    const results = await Location.reverseGeocodeAsync({ latitude: latNum, longitude: lonNum });
+    if (!results || results.length === 0) return null;
+    const addr = results[0];
+
+    // Priority: District/Subregion -> Locality/Name -> City/Region
+    const locality = addr.district || addr.subregion || addr.name || addr.street;
+    const city = addr.city || addr.region;
+
+    const parts = [locality, city].filter(Boolean);
+    const uniqueParts = parts.filter((item, idx) => parts.indexOf(item) === idx);
+    return uniqueParts.join(', ') || null;
+  } catch (e) {
+    return null;
+  }
+};
+
 export default function Home({
   user,
   onLogout,
@@ -75,6 +111,11 @@ export default function Home({
 
   const [coords, setCoords] = useState(null);
   const [outCoords, setOutCoords] = useState(null);
+
+  // Human-Readable Locality State
+  const [areaName, setAreaName] = useState(null);
+  const [isResolvingArea, setIsResolvingArea] = useState(false);
+  const [outAreaName, setOutAreaName] = useState(null);
 
   // Live Timer State (ticks every 1 second when shift is active)
   const [now, setNow] = useState(Date.now());
@@ -171,6 +212,9 @@ export default function Home({
   // Active Tab: 'attendance' or 'leave'
   const [activeTab, setActiveTab] = useState('attendance');
 
+  // Unified Total Leave Quota (5 Days Total)
+  const TOTAL_LEAVE_ALLOWANCE = 5;
+
   // Leave Request Form State
   const leaveTypes = ['Sick Leave', 'Casual Leave', 'Emergency Leave', 'Other'];
   const [leaveType, setLeaveType] = useState('Sick Leave');
@@ -195,18 +239,65 @@ export default function Home({
     return d;
   };
 
+  const MONTH_MAP = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    january: 0, february: 1, march: 2, april: 3, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+  };
+
   const parseDate = (dStr) => {
     if (!dStr) return null;
-    const trimmed = String(dStr).trim();
-    if (/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(trimmed)) {
-      const parts = trimmed.split(/[-/]/);
-      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0, 0);
+    if (dStr instanceof Date) {
+      const d = new Date(dStr.getTime());
+      d.setHours(0, 0, 0, 0);
+      return d;
     }
+    const trimmed = String(dStr).trim();
+
+    // 1. ISO format: YYYY-MM-DD
+    const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (ymdMatch) {
+      return new Date(Number(ymdMatch[1]), Number(ymdMatch[2]) - 1, Number(ymdMatch[3]), 0, 0, 0, 0);
+    }
+
+    // 2. Textual format: "11 Nov 2026" or "11-Nov-2026"
+    const dmyTextMatch = trimmed.match(/^(\d{1,2})[\s\-_]+([A-Za-z]+)[\s\-_,]+(\d{4})/);
+    if (dmyTextMatch) {
+      const day = Number(dmyTextMatch[1]);
+      const mStr = dmyTextMatch[2].toLowerCase();
+      const month = MONTH_MAP[mStr];
+      const year = Number(dmyTextMatch[3]);
+      if (month !== undefined) {
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+    }
+
+    // 3. Textual format: "Nov 11, 2026"
+    const mdyTextMatch = trimmed.match(/^([A-Za-z]+)[\s\-_]+(\d{1,2})[\s\-_,]+(\d{4})/);
+    if (mdyTextMatch) {
+      const mStr = mdyTextMatch[1].toLowerCase();
+      const month = MONTH_MAP[mStr];
+      const day = Number(mdyTextMatch[2]);
+      const year = Number(mdyTextMatch[3]);
+      if (month !== undefined) {
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+    }
+
+    // 4. Numeric format: DD-MM-YYYY or DD/MM/YYYY
+    const dmyNumMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyNumMatch) {
+      return new Date(Number(dmyNumMatch[3]), Number(dmyNumMatch[2]) - 1, Number(dmyNumMatch[1]), 0, 0, 0, 0);
+    }
+
     const ts = Date.parse(trimmed);
-    if (isNaN(ts)) return null;
-    const d = new Date(ts);
-    d.setHours(0, 0, 0, 0);
-    return d;
+    if (!isNaN(ts)) {
+      const d = new Date(ts);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    return null;
   };
 
   const getMinDateForTarget = (target) => {
@@ -350,10 +441,52 @@ export default function Home({
   };
 
   useEffect(() => {
-    if (user?.role !== 'manager' && activeTab === 'leave' && employeeLeaveTab === 'myRequests') {
+    if (user?.id && user?.role !== 'manager') {
+      loadMyLeaveRequests();
+    }
+  }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    if (user?.role !== 'manager' && activeTab === 'leave') {
       loadMyLeaveRequests();
     }
   }, [user?.role, activeTab, employeeLeaveTab]);
+
+  // Unified Leave Balance Wallet calculation (5 Days Total Quota)
+  const calculateLeaveWallet = () => {
+    const list = myLeaveRequests || [];
+    let approvedDays = 0;
+    let pendingDays = 0;
+
+    list.forEach((req) => {
+      const fromD = parseDate(req.from || req.from_date);
+      const toD = parseDate(req.to || req.to_date);
+      const count =
+        fromD && toD
+          ? Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+          : 1;
+
+      if (req.status === 'Approved') {
+        approvedDays += count;
+      } else if (req.status === 'Pending') {
+        pendingDays += count;
+      }
+    });
+
+    // Available Days = Total Quota minus Approved minus Pending (reserved)
+    const remainingDays = Math.max(0, TOTAL_LEAVE_ALLOWANCE - approvedDays - pendingDays);
+    const percentUsed = Math.min(100, Math.round(((approvedDays + pendingDays) / TOTAL_LEAVE_ALLOWANCE) * 100));
+
+    return {
+      total: TOTAL_LEAVE_ALLOWANCE,
+      approvedDays,
+      pendingDays,
+      remainingDays,
+      percentUsed,
+    };
+  };
+
+  const leaveWallet = calculateLeaveWallet();
 
   // DB leave requests for Manager
   const [dbLeaveRequests, setDbLeaveRequests] = useState(null);
@@ -393,6 +526,31 @@ export default function Home({
     }
   };
 
+  // Team Summary for Manager
+  const [teamSummary, setTeamSummary] = useState([]);
+  const [isTeamLoading, setIsTeamLoading] = useState(false);
+
+  const loadTeamSummary = async () => {
+    if (user?.role !== 'manager') return;
+    setIsTeamLoading(true);
+    try {
+      const res = await api.getTeamSummary();
+      if (res.success && Array.isArray(res.employees)) {
+        setTeamSummary(res.employees);
+      }
+    } catch (err) {
+      console.error('Fetch team summary error:', err);
+    } finally {
+      setIsTeamLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.role === 'manager') {
+      loadTeamSummary();
+    }
+  }, [user?.role]);
+
   const loadTodayAttendance = async () => {
     if (!user?.id) return;
     try {
@@ -410,11 +568,20 @@ export default function Home({
               latitude: res.today.latitude,
               longitude: res.today.longitude,
             });
+            setIsResolvingArea(true);
+            resolveAreaName(res.today.latitude, res.today.longitude)
+              .then((place) => {
+                if (place) setAreaName(place);
+              })
+              .finally(() => setIsResolvingArea(false));
           }
           if (res.today.outLatitude && res.today.outLongitude) {
             setOutCoords({
               latitude: res.today.outLatitude,
               longitude: res.today.outLongitude,
+            });
+            resolveAreaName(res.today.outLatitude, res.today.outLongitude).then((place) => {
+              if (place) setOutAreaName(place);
             });
           }
 
@@ -439,37 +606,109 @@ export default function Home({
     });
   };
 
+  /**
+   * Strict Location Validator:
+   * 1. Checks if GPS / Location services are enabled on the device.
+   * 2. Checks if app foreground location permission is granted.
+   * 3. Fetches precise coordinates.
+   * Blocks punch action if any check fails.
+   */
+  const getVerifiedLocation = async (actionType = 'in') => {
+    const actionLabel = actionType === 'in' ? 'Check-IN' : 'Check-OUT';
+
+    // 1. Device GPS / Location Service Toggle Check
+    let servicesEnabled = false;
+    try {
+      servicesEnabled = await Location.hasServicesEnabledAsync();
+    } catch (e) {
+      console.log('Location services check notice:', e.message);
+    }
+
+    if (!servicesEnabled) {
+      Alert.alert(
+        'Location Service is OFF',
+        `Please turn ON your device's Location (GPS) in your phone settings or notification bar to ${actionLabel}.`,
+        [{ text: 'OK' }]
+      );
+      return null;
+    }
+
+    // 2. Foreground Location Permission Check
+    let permStatus = 'undetermined';
+    try {
+      const currentPerm = await Location.getForegroundPermissionsAsync();
+      permStatus = currentPerm.status;
+      if (permStatus !== 'granted') {
+        const reqPerm = await Location.requestForegroundPermissionsAsync();
+        permStatus = reqPerm.status;
+      }
+    } catch (e) {
+      console.log('Permission request error:', e.message);
+    }
+
+    if (permStatus !== 'granted') {
+      Alert.alert(
+        'Location Permission Required',
+        `You cannot ${actionLabel} without location permission. Please allow location access in your app settings to record attendance.`,
+        [{ text: 'OK' }]
+      );
+      return null;
+    }
+
+    // 3. Acquire GPS Coordinates
+    try {
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      if (!location || !location.coords) {
+        Alert.alert(
+          'Location Signal Unavailable',
+          `Unable to read GPS coordinates. Please ensure you have a clear location signal and try again.`
+        );
+        return null;
+      }
+
+      const lat = location.coords.latitude;
+      const lon = location.coords.longitude;
+      const latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
+      const lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
+
+      return { lat, lon, latStr, lonStr };
+    } catch (error) {
+      console.error('GPS acquisition error:', error);
+      Alert.alert(
+        'GPS Acquisition Failed',
+        `Unable to capture your current location: ${error.message || 'GPS timeout'}. Please ensure Location is ON with strong signal and try again.`
+      );
+      return null;
+    }
+  };
+
   const handleInPress = async () => {
     if (isInPressed || isLocating) return;
 
     setIsLocating(true);
-    const currentTime = getCurrentFormattedTime();
-    let latStr = null;
-    let lonStr = null;
 
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-
-      if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-
-        const lat = location.coords.latitude;
-        const lon = location.coords.longitude;
-        latStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
-        lonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
-      } else {
-        Alert.alert(
-          'Location Permission',
-          'Permission not granted. GPS coordinates will not be recorded.'
-        );
-      }
-    } catch (error) {
-      console.log('Location capture notice:', error.message);
-    } finally {
+    // Strict validation: Require verified GPS location & permission
+    const loc = await getVerifiedLocation('in');
+    if (!loc) {
       setIsLocating(false);
+      return; // BLOCKED: No check-in without location ON and permission
     }
+
+    const { lat, lon, latStr, lonStr } = loc;
+    const currentTime = getCurrentFormattedTime();
+
+    // Immediately resolve locality name on check-in
+    setIsResolvingArea(true);
+    resolveAreaName(lat, lon)
+      .then((place) => {
+        if (place) setAreaName(place);
+      })
+      .finally(() => setIsResolvingArea(false));
+
+    setIsLocating(false);
 
     if (user?.id) {
       try {
@@ -485,9 +724,7 @@ export default function Home({
 
     setIsInPressed(true);
     setInTime(currentTime);
-    if (latStr && lonStr) {
-      setCoords({ latitude: latStr, longitude: lonStr });
-    }
+    setCoords({ latitude: latStr, longitude: lonStr });
     setTodayStatus('IN');
 
     if (setRecords) {
@@ -501,8 +738,8 @@ export default function Home({
           status: 'IN',
           inTime: currentTime,
           outTime: '--:--',
-          latitude: latStr || '--',
-          longitude: lonStr || '--',
+          latitude: latStr,
+          longitude: lonStr,
         },
         ...prev.map((r, i) => ({ ...r, sno: i + 2 })),
       ]);
@@ -519,24 +756,20 @@ export default function Home({
     if (isOutPressed || isPunchedOutLoading) return;
 
     setIsPunchedOutLoading(true);
-    const currentTime = getCurrentFormattedTime();
-    let outLatStr = null;
-    let outLonStr = null;
 
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status === 'granted') {
-        const location = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        });
-        const lat = location.coords.latitude;
-        const lon = location.coords.longitude;
-        outLatStr = `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? 'N' : 'S'}`;
-        outLonStr = `${Math.abs(lon).toFixed(4)}° ${lon >= 0 ? 'E' : 'W'}`;
-      }
-    } catch (error) {
-      console.log('OUT location notice:', error.message);
+    // Strict validation: Require verified GPS location & permission
+    const loc = await getVerifiedLocation('out');
+    if (!loc) {
+      setIsPunchedOutLoading(false);
+      return; // BLOCKED: No check-out without location ON and permission
     }
+
+    const { lat, lon, latStr: outLatStr, lonStr: outLonStr } = loc;
+    const currentTime = getCurrentFormattedTime();
+
+    resolveAreaName(lat, lon).then((place) => {
+      if (place) setOutAreaName(place);
+    });
 
     if (user?.id) {
       try {
@@ -555,9 +788,7 @@ export default function Home({
     setIsOutPressed(true);
     setOutTime(currentTime);
     setTodayStatus('OUT');
-    if (outLatStr && outLonStr) {
-      setOutCoords({ latitude: outLatStr, longitude: outLonStr });
-    }
+    setOutCoords({ latitude: outLatStr, longitude: outLonStr });
 
     if (setRecords) {
       setRecords((prev) =>
@@ -567,8 +798,8 @@ export default function Home({
                 ...item,
                 status: 'OUT',
                 outTime: currentTime,
-                outLatitude: outLatStr || '--',
-                outLongitude: outLonStr || '--',
+                outLatitude: outLatStr,
+                outLongitude: outLonStr,
               }
             : item
         )
@@ -600,6 +831,15 @@ export default function Home({
 
     if (toD < fromD) {
       Alert.alert('Invalid Date', 'To Date cannot be earlier than From Date.');
+      return;
+    }
+
+    const requestedDays = Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / (1000 * 60 * 60 * 24)) + 1);
+    if (requestedDays > leaveWallet.remainingDays) {
+      Alert.alert(
+        'Leave Quota Exceeded',
+        `You have ${leaveWallet.remainingDays} days remaining out of your 5-day quota, but this request is for ${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}. Please adjust your dates.`
+      );
       return;
     }
 
@@ -692,6 +932,23 @@ export default function Home({
                 </Text>
               </View>
             </View>
+
+            {/* Locality right below name */}
+            <View style={styles.userLocationRow}>
+              <Ionicons name="location" size={12} color={THEME.colors.primary} />
+              <Text style={styles.userLocationText} numberOfLines={1}>
+                {areaName
+                  ? areaName
+                  : coords
+                  ? `${coords.latitude}, ${coords.longitude}`
+                  : isResolvingArea
+                  ? 'Detecting area...'
+                  : 'Punch to detect location'}
+              </Text>
+              {coords ? (
+                <View style={styles.userLocationDot} />
+              ) : null}
+            </View>
           </View>
 
           <View style={styles.dateBadge}>
@@ -719,9 +976,29 @@ export default function Home({
               color={activeTab === 'attendance' ? THEME.colors.textInverse : THEME.colors.textSecondary}
             />
             <Text style={[styles.tabText, activeTab === 'attendance' && styles.tabTextActive]}>
-              Attendance
+              {user?.role === 'manager' ? 'My Punch' : 'Attendance'}
             </Text>
           </TouchableOpacity>
+
+          {user?.role === 'manager' && (
+            <TouchableOpacity
+              style={[styles.tabButton, activeTab === 'team' && styles.tabButtonTeamActive]}
+              onPress={() => {
+                setActiveTab('team');
+                loadTeamSummary();
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="people-outline"
+                size={16}
+                color={activeTab === 'team' ? THEME.colors.textInverse : THEME.colors.textSecondary}
+              />
+              <Text style={[styles.tabText, activeTab === 'team' && styles.tabTextActive]}>
+                Team Roster
+              </Text>
+            </TouchableOpacity>
+          )}
 
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'leave' && styles.tabButtonLeaveActive]}
@@ -979,16 +1256,6 @@ export default function Home({
               </View>
             </View>
 
-            {/* GPS Location Pill */}
-            {coords && coords.latitude && coords.longitude && (
-              <View style={styles.locationBadgeRow}>
-                <Ionicons name="location" size={13} color={THEME.colors.primary} />
-                <Text style={styles.locationBadgeText}>
-                  GPS Captured: {coords.latitude}, {coords.longitude}
-                </Text>
-              </View>
-            )}
-
             {/* Attendance Report CTA */}
             <TouchableOpacity
               style={styles.reportButton}
@@ -1007,6 +1274,142 @@ export default function Home({
               <Ionicons name="chevron-forward" size={18} color={THEME.colors.textMuted} />
             </TouchableOpacity>
           </>
+        )}
+
+        {/* ── MANAGER TEAM ROSTER TAB ── */}
+        {activeTab === 'team' && user?.role === 'manager' && (
+          <View style={{ gap: 14 }}>
+            {/* Team Live KPI Metrics */}
+            <View style={styles.teamKpiCard}>
+              <View style={styles.teamKpiHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="pulse-outline" size={16} color={THEME.colors.primary} />
+                  <Text style={styles.teamKpiTitle}>Today's Team Presence</Text>
+                </View>
+                <TouchableOpacity onPress={loadTeamSummary} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="refresh-outline" size={16} color={THEME.colors.primary} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.teamKpiRow}>
+                <View style={styles.teamKpiBox}>
+                  <Text style={styles.teamKpiNumber}>{teamSummary.length}</Text>
+                  <Text style={styles.teamKpiLabel}>Total</Text>
+                </View>
+                <View style={styles.teamKpiDivider} />
+                <View style={styles.teamKpiBox}>
+                  <Text style={[styles.teamKpiNumber, { color: THEME.colors.success }]}>
+                    {teamSummary.filter((e) => e.status === 'IN' || e.status === 'OUT').length}
+                  </Text>
+                  <Text style={styles.teamKpiLabel}>Present</Text>
+                </View>
+                <View style={styles.teamKpiDivider} />
+                <View style={styles.teamKpiBox}>
+                  <Text style={[styles.teamKpiNumber, { color: '#0284C7' }]}>
+                    {teamSummary.filter((e) => e.status === 'LEAVE').length}
+                  </Text>
+                  <Text style={styles.teamKpiLabel}>On Leave</Text>
+                </View>
+                <View style={styles.teamKpiDivider} />
+                <View style={styles.teamKpiBox}>
+                  <Text style={[styles.teamKpiNumber, { color: THEME.colors.textMuted }]}>
+                    {teamSummary.filter((e) => e.status !== 'IN' && e.status !== 'OUT' && e.status !== 'LEAVE').length}
+                  </Text>
+                  <Text style={styles.teamKpiLabel}>Not In</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Team Member Cards */}
+            <View style={styles.teamRosterSection}>
+              <View style={styles.teamRosterHeader}>
+                <Text style={styles.teamRosterTitle}>All Employees ({teamSummary.length})</Text>
+                <Text style={styles.teamRosterSubtitle}>Tap to inspect full attendance</Text>
+              </View>
+
+              {isTeamLoading && teamSummary.length === 0 ? (
+                <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                  <ActivityIndicator size="small" color={THEME.colors.primary} />
+                  <Text style={{ marginTop: 8, fontSize: 12, color: THEME.colors.textMuted }}>Loading team...</Text>
+                </View>
+              ) : teamSummary.length === 0 ? (
+                <View style={styles.leaveEmptyBox}>
+                  <Ionicons name="people-outline" size={32} color={THEME.colors.surfaceMuted} />
+                  <Text style={styles.leaveEmptyText}>No employees found</Text>
+                </View>
+              ) : (
+                teamSummary.map((emp) => {
+                  const isPresent = emp.status === 'IN' || emp.status === 'OUT';
+                  const isLeave = emp.status === 'LEAVE';
+                  return (
+                    <View key={emp.id} style={styles.teamMemberCard}>
+                      <View style={styles.teamMemberTop}>
+                        <View style={styles.teamAvatar}>
+                          <Text style={styles.teamAvatarText}>
+                            {emp.name ? emp.name.charAt(0).toUpperCase() : 'E'}
+                          </Text>
+                        </View>
+                        <View style={styles.teamMemberInfo}>
+                          <Text style={styles.teamMemberName}>{emp.name}</Text>
+                          <Text style={styles.teamMemberEmpId}>{emp.empId} • {emp.role}</Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.teamStatusBadge,
+                            isPresent
+                              ? { backgroundColor: THEME.colors.successSurface }
+                              : isLeave
+                              ? { backgroundColor: '#E0F2FE' }
+                              : { backgroundColor: THEME.colors.surfaceSubtle },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.teamStatusText,
+                              isPresent
+                                ? { color: THEME.colors.success }
+                                : isLeave
+                                ? { color: '#0284C7' }
+                                : { color: THEME.colors.textMuted },
+                            ]}
+                          >
+                            {emp.status === 'IN' ? '● Clocked In' : emp.status === 'OUT' ? '✓ Clocked Out' : emp.status === 'LEAVE' ? '🏖 On Leave' : '○ Not In'}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Today punch details */}
+                      <View style={styles.teamPunchRow}>
+                        <View style={styles.teamPunchItem}>
+                          <Text style={styles.teamPunchLabel}>Punch In</Text>
+                          <Text style={styles.teamPunchValue}>{emp.inTime || '--:--'}</Text>
+                        </View>
+                        <View style={styles.teamPunchItem}>
+                          <Text style={styles.teamPunchLabel}>Punch Out</Text>
+                          <Text style={styles.teamPunchValue}>{emp.outTime || '--:--'}</Text>
+                        </View>
+                        <View style={styles.teamPunchItem}>
+                          <Text style={styles.teamPunchLabel}>Total Logged</Text>
+                          <Text style={styles.teamPunchValue}>{emp.totalDays || 0} days</Text>
+                        </View>
+                      </View>
+
+                      {/* CTA to inspect full attendance */}
+                      <TouchableOpacity
+                        style={styles.teamInspectBtn}
+                        onPress={() => onNavigateReport(emp)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="calendar-outline" size={14} color={THEME.colors.primary} />
+                        <Text style={styles.teamInspectBtnText}>View Attendance & Heatmap</Text>
+                        <Ionicons name="arrow-forward" size={14} color={THEME.colors.primary} style={{ marginLeft: 'auto' }} />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          </View>
         )}
 
         {/* ── LEAVE REQUEST TAB ── */}
@@ -1103,6 +1506,106 @@ export default function Home({
             ) : (
               /* EMPLOYEE VIEW */
               <View>
+                {/* ── LEAVE BALANCE WALLET CARD ── */}
+                <View style={styles.walletCard}>
+                  <View style={styles.walletHeaderRow}>
+                    <View style={styles.walletTitleGroup}>
+                      <View style={styles.walletIconBox}>
+                        <Ionicons name="wallet-outline" size={18} color={THEME.colors.primary} />
+                      </View>
+                      <View>
+                        <Text style={styles.walletCardTitle}>Leave Balance Wallet</Text>
+                        <Text style={styles.walletCardSubtitle}>Annual Paid Quota</Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View
+                        style={[
+                          styles.walletBadge,
+                          leaveWallet.remainingDays > 0 ? styles.walletBadgePositive : styles.walletBadgeExhausted,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.walletBadgeText,
+                            leaveWallet.remainingDays > 0
+                              ? styles.walletBadgeTextPositive
+                              : styles.walletBadgeTextExhausted,
+                          ]}
+                        >
+                          {leaveWallet.remainingDays} / {TOTAL_LEAVE_ALLOWANCE} Remaining
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={loadMyLeaveRequests}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name="refresh-outline"
+                          size={18}
+                          color={isMyLeaveLoading ? THEME.colors.textMuted : THEME.colors.primary}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Progress Section */}
+                  <View style={styles.walletProgressSection}>
+                    <View style={styles.walletProgressHeader}>
+                      <Text style={styles.walletProgressLabel}>Available Leave Days</Text>
+                      <Text style={styles.walletProgressValue}>
+                        {leaveWallet.remainingDays} of {TOTAL_LEAVE_ALLOWANCE} Days Left
+                      </Text>
+                    </View>
+                    <View style={styles.walletProgressTrack}>
+                      <View
+                        style={[
+                          styles.walletProgressFill,
+                          {
+                            width: `${Math.max(6, Math.min(100, (leaveWallet.remainingDays / TOTAL_LEAVE_ALLOWANCE) * 100))}%`,
+                            backgroundColor:
+                              leaveWallet.remainingDays >= 3
+                                ? THEME.colors.success
+                                : leaveWallet.remainingDays >= 1
+                                ? THEME.colors.warning
+                                : THEME.colors.danger,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Metrics Breakdown Grid */}
+                  <View style={styles.walletMetricsRow}>
+                    <View style={styles.walletMetricBox}>
+                      <Text style={styles.walletMetricNumber}>{TOTAL_LEAVE_ALLOWANCE}</Text>
+                      <Text style={styles.walletMetricLabel}>Total Quota</Text>
+                    </View>
+                    <View style={styles.walletMetricDivider} />
+                    <View style={styles.walletMetricBox}>
+                      <Text style={[styles.walletMetricNumber, { color: THEME.colors.textSecondary }]}>
+                        {leaveWallet.approvedDays}
+                      </Text>
+                      <Text style={styles.walletMetricLabel}>Used (Approved)</Text>
+                    </View>
+                    <View style={styles.walletMetricDivider} />
+                    <View style={styles.walletMetricBox}>
+                      <Text style={[styles.walletMetricNumber, { color: THEME.colors.warning }]}>
+                        {leaveWallet.pendingDays}
+                      </Text>
+                      <Text style={styles.walletMetricLabel}>Pending</Text>
+                    </View>
+                    <View style={styles.walletMetricDivider} />
+                    <View style={styles.walletMetricBox}>
+                      <Text style={[styles.walletMetricNumber, { color: THEME.colors.success }]}>
+                        {leaveWallet.remainingDays}
+                      </Text>
+                      <Text style={styles.walletMetricLabel}>Available</Text>
+                    </View>
+                  </View>
+                </View>
+
                 {/* Segmented control: New Request vs My Requests */}
                 <View style={styles.employeeSubToggleRow}>
                   <TouchableOpacity
@@ -1625,6 +2128,25 @@ const styles = StyleSheet.create({
     color: THEME.colors.slateHero,
     fontWeight: '800',
   },
+  userLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  userLocationText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+    maxWidth: 220,
+  },
+  userLocationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: THEME.colors.success,
+    marginLeft: 2,
+  },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2084,24 +2606,79 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
 
-  /* Location Indicator */
-  locationBadgeRow: {
+  /* Location Indicator Card */
+  locationCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    marginBottom: 14,
+    ...THEME.shadows.card,
+  },
+  locationCardLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  locationIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: THEME.radii.md,
     backgroundColor: THEME.colors.primarySurface,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: THEME.radii.sm,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: THEME.colors.primaryBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  locationBadgeText: {
-    fontSize: 11.5,
+  locationTextCol: {
+    flex: 1,
+  },
+  locationHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  locationCardLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
     color: THEME.colors.primary,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  locationAreaNameText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  locationCoordsSubtext: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  locationVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.colors.successSurface,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.radii.pill,
+    borderWidth: 1,
+    borderColor: THEME.colors.successBorder,
+    gap: 4,
+    marginLeft: 8,
+  },
+  locationVerifiedText: {
+    fontSize: 10.5,
     fontWeight: '700',
+    color: THEME.colors.success,
   },
 
   /* Report Navigation Button */
@@ -2569,5 +3146,291 @@ const styles = StyleSheet.create({
     color: THEME.colors.textSecondary,
     fontWeight: '600',
     fontSize: 12,
+  },
+  walletCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    padding: 18,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+  },
+  walletHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    width: '100%',
+  },
+  walletTitleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexShrink: 1,
+  },
+  walletIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.primarySurface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+  },
+  walletCardTitle: {
+    fontSize: THEME.typography.base,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  walletCardSubtitle: {
+    fontSize: THEME.typography.xs,
+    color: THEME.colors.textMuted,
+    fontWeight: '500',
+    marginTop: 1,
+  },
+  walletBadge: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: THEME.radii.pill,
+    borderWidth: 1,
+  },
+  walletBadgePositive: {
+    backgroundColor: THEME.colors.successSurface,
+    borderColor: THEME.colors.successBorder,
+  },
+  walletBadgeExhausted: {
+    backgroundColor: THEME.colors.dangerSurface,
+    borderColor: THEME.colors.dangerBorder,
+  },
+  walletBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+  walletBadgeTextPositive: {
+    color: THEME.colors.success,
+  },
+  walletBadgeTextExhausted: {
+    color: THEME.colors.danger,
+  },
+  walletProgressSection: {
+    marginBottom: 14,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    padding: 12,
+    borderRadius: THEME.radii.sm,
+    borderWidth: 1,
+    borderColor: THEME.colors.borderLight,
+  },
+  walletProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+    width: '100%',
+  },
+  walletProgressLabel: {
+    fontSize: THEME.typography.xs,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  walletProgressValue: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  walletProgressTrack: {
+    height: 8,
+    borderRadius: THEME.radii.pill,
+    backgroundColor: THEME.colors.surfaceMuted,
+    overflow: 'hidden',
+  },
+  walletProgressFill: {
+    height: '100%',
+    borderRadius: THEME.radii.pill,
+  },
+  walletMetricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  walletMetricBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  walletMetricNumber: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  walletMetricLabel: {
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  walletMetricDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: THEME.colors.border,
+  },
+  tabButtonTeamActive: {
+    backgroundColor: THEME.colors.primary,
+  },
+  teamKpiCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+  },
+  teamKpiHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  teamKpiTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  teamKpiRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 4,
+  },
+  teamKpiBox: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  teamKpiNumber: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  teamKpiLabel: {
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  teamKpiDivider: {
+    width: 1,
+    height: 26,
+    backgroundColor: THEME.colors.border,
+  },
+  teamRosterSection: {
+    gap: 10,
+  },
+  teamRosterHeader: {
+    marginBottom: 2,
+  },
+  teamRosterTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  teamRosterSubtitle: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 1,
+  },
+  teamMemberCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    gap: 10,
+    ...THEME.shadows.card,
+  },
+  teamMemberTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  teamAvatar: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: THEME.colors.slateHero,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  teamAvatarText: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  teamMemberInfo: {
+    flex: 1,
+  },
+  teamMemberName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  teamMemberEmpId: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    marginTop: 1,
+  },
+  teamStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.radii.full,
+  },
+  teamStatusText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  teamPunchRow: {
+    flexDirection: 'row',
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderRadius: THEME.radii.sm,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: THEME.colors.borderLight,
+    justifyContent: 'space-around',
+  },
+  teamPunchItem: {
+    alignItems: 'center',
+  },
+  teamPunchLabel: {
+    fontSize: 9.5,
+    color: THEME.colors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  teamPunchValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    marginTop: 2,
+  },
+  teamInspectBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: THEME.colors.primarySurface,
+    borderRadius: THEME.radii.sm,
+  },
+  teamInspectBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    color: THEME.colors.primary,
   },
 });

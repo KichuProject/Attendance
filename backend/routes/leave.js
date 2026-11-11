@@ -44,7 +44,10 @@ router.post('/request', async (req, res) => {
 router.get('/all', async (req, res) => {
   try {
     const [rows] = await pool.query(
-      `SELECT id, user_id, emp_id, name, leave_type, from_date, to_date, reason, status, created_at
+      `SELECT id, user_id, emp_id, name, leave_type,
+              DATE_FORMAT(from_date, '%Y-%m-%d') AS from_date,
+              DATE_FORMAT(to_date, '%Y-%m-%d') AS to_date,
+              reason, status, created_at
        FROM leave_requests
        ORDER BY created_at DESC`
     );
@@ -78,7 +81,10 @@ router.get('/user/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
     const [rows] = await pool.query(
-      `SELECT id, user_id, emp_id, name, leave_type, from_date, to_date, reason, status, created_at
+      `SELECT id, user_id, emp_id, name, leave_type,
+              DATE_FORMAT(from_date, '%Y-%m-%d') AS from_date,
+              DATE_FORMAT(to_date, '%Y-%m-%d') AS to_date,
+              reason, status, created_at
        FROM leave_requests
        WHERE user_id = ?
        ORDER BY created_at DESC`,

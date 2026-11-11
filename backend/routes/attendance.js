@@ -60,6 +60,10 @@ router.post('/check-in', async (req, res) => {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
+    if (!latitude || !longitude || latitude === '--' || longitude === '--') {
+      return res.status(400).json({ success: false, error: 'GPS location is required to Check IN. Please turn ON location.' });
+    }
+
     const time = inTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
     const [existing] = await pool.query(
@@ -106,6 +110,10 @@ router.post('/check-out', async (req, res) => {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
+    if (!outLatitude || !outLongitude || outLatitude === '--' || outLongitude === '--') {
+      return res.status(400).json({ success: false, error: 'GPS location is required to Check OUT. Please turn ON location.' });
+    }
+
     const [existing] = await pool.query(
       'SELECT id, status FROM attendance WHERE user_id = ? AND date = CURDATE()',
       [userId]
@@ -145,7 +153,7 @@ router.get('/history/:userId', async (req, res) => {
     const { fromDate, toDate } = req.query;
 
     let query = `
-      SELECT a.id, a.date, a.status, a.in_time, a.out_time,
+      SELECT a.id, DATE_FORMAT(a.date, '%Y-%m-%d') as raw_date, a.date, a.status, a.in_time, a.out_time,
              a.latitude, a.longitude, a.out_latitude, a.out_longitude,
              u.emp_id, u.name
       FROM attendance a
@@ -174,6 +182,7 @@ router.get('/history/:userId', async (req, res) => {
       empId: r.emp_id,
       name: r.name,
       date: formatDateString(r.date),
+      rawDate: r.raw_date,
       status: r.status,
       inTime: r.in_time || '--:--',
       outTime: r.out_time || '--:--',
@@ -191,6 +200,49 @@ router.get('/history/:userId', async (req, res) => {
   } catch (error) {
     console.error('History fetch error:', error);
     res.status(500).json({ error: 'Failed to fetch attendance history' });
+  }
+});
+
+// 5. Get all team employees with their today attendance status (Manager)
+router.get('/team-summary', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT u.id, u.name, u.username, u.emp_id, u.role,
+             a.status as today_status,
+             a.in_time, a.out_time,
+             a.latitude, a.longitude,
+             a.out_latitude, a.out_longitude,
+             (SELECT COUNT(*) FROM attendance WHERE user_id = u.id AND status IN ('IN', 'OUT')) as total_punches,
+             (SELECT COUNT(*) FROM leave_requests WHERE user_id = u.id AND status = 'Approved') as total_leaves
+      FROM users u
+      LEFT JOIN attendance a ON u.id = a.user_id AND a.date = CURDATE()
+      WHERE u.role != 'manager'
+      ORDER BY u.name ASC
+    `);
+
+    res.json({
+      success: true,
+      count: rows.length,
+      employees: rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        username: r.username,
+        empId: r.emp_id,
+        role: r.role,
+        todayStatus: r.today_status || 'NOT IN',
+        inTime: r.in_time || null,
+        outTime: r.out_time || null,
+        latitude: r.latitude || null,
+        longitude: r.longitude || null,
+        outLatitude: r.out_latitude || null,
+        outLongitude: r.out_longitude || null,
+        totalPunches: r.total_punches || 0,
+        totalLeaves: r.total_leaves || 0,
+      })),
+    });
+  } catch (error) {
+    console.error('Fetch team summary error:', error);
+    res.status(500).json({ error: 'Failed to fetch team summary' });
   }
 });
 

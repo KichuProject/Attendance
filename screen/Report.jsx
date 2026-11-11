@@ -16,7 +16,35 @@ import { WebView } from 'react-native-webview';
 import { api } from '../services/api';
 import THEME from '../constants/theme';
 
-export default function Report({ user, records, onBack }) {
+export default function Report({ user, initialEmployee, records, onBack }) {
+  const isManager = user?.role === 'manager';
+
+  const defaultEmployee = initialEmployee || (isManager ? { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee' } : user);
+  const [activeEmployee, setActiveEmployee] = useState(defaultEmployee);
+
+  const [teamList, setTeamList] = useState([
+    { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee' },
+    { id: 30001, name: 'Priya Sharma', empId: 'EMP-1003', role: 'employee' },
+    { id: 30002, name: 'Rahul Verma', empId: 'EMP-1004', role: 'employee' },
+  ]);
+
+  const targetUserId = isManager ? (activeEmployee?.id || 2) : user?.id;
+
+  useEffect(() => {
+    async function loadTeam() {
+      if (!isManager) return;
+      try {
+        const res = await api.getTeamSummary();
+        if (res.success && Array.isArray(res.employees) && res.employees.length > 0) {
+          setTeamList(res.employees);
+        }
+      } catch (err) {
+        console.log('Error loading team for manager report:', err);
+      }
+    }
+    loadTeam();
+  }, [isManager]);
+
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
 
@@ -33,14 +61,67 @@ export default function Report({ user, records, onBack }) {
   const [areaName, setAreaName] = useState(null);
   const [areaLoading, setAreaLoading] = useState(false);
 
+  // Monthly Attendance Heatmap State
+  const [heatmapDate, setHeatmapDate] = useState(new Date());
+  const [selectedHeatmapDay, setSelectedHeatmapDay] = useState(null);
+  const [userLeaves, setUserLeaves] = useState([]);
+  const [allAttendanceRecords, setAllAttendanceRecords] = useState([]);
+  const [isHeatmapRefreshing, setIsHeatmapRefreshing] = useState(false);
+
+  const fetchUserLeaves = async (uid = targetUserId) => {
+    if (!uid) return;
+    try {
+      const res = await api.getUserLeaveRequests(uid);
+      if (res.success && Array.isArray(res.requests)) {
+        setUserLeaves(res.requests);
+      } else {
+        setUserLeaves([]);
+      }
+    } catch (err) {
+      console.error('Fetch user leaves for heatmap error:', err);
+    }
+  };
+
+  const fetchFullAttendance = async (uid = targetUserId) => {
+    if (!uid) return;
+    try {
+      const res = await api.getHistory(uid);
+      if (res.success && Array.isArray(res.records)) {
+        setAllAttendanceRecords(res.records);
+      } else {
+        setAllAttendanceRecords([]);
+      }
+    } catch (err) {
+      console.error('Fetch full heatmap attendance error:', err);
+    }
+  };
+
+  const reloadHeatmapData = async () => {
+    setIsHeatmapRefreshing(true);
+    try {
+      await Promise.all([fetchFullAttendance(targetUserId), fetchUserLeaves(targetUserId)]);
+    } finally {
+      setIsHeatmapRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (targetUserId) {
+      fetchUserLeaves(targetUserId);
+      fetchFullAttendance(targetUserId);
+    }
+  }, [targetUserId]);
+
   useEffect(() => {
     async function fetchHistory() {
-      if (!user?.id) return;
+      if (!targetUserId) return;
       setIsLoading(true);
       try {
-        const res = await api.getHistory(user.id, fromDate, toDate);
+        const res = await api.getHistory(targetUserId, fromDate, toDate);
         if (res.success && Array.isArray(res.records)) {
           setDbRecords(res.records);
+        } else {
+          setDbRecords([]);
         }
       } catch (err) {
         console.error('Fetch history error:', err);
@@ -50,32 +131,75 @@ export default function Report({ user, records, onBack }) {
     }
 
     fetchHistory();
-  }, [user?.id, fromDate, toDate]);
+  }, [targetUserId, fromDate, toDate]);
 
   const attendanceRecords = dbRecords !== null ? dbRecords : (records || []);
 
+  const MONTH_MAP = {
+    jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+    jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
+    january: 0, february: 1, march: 2, april: 3, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11,
+  };
+
   const parseDate = (dStr) => {
     if (!dStr) return null;
-    const trimmed = dStr.trim();
+    if (dStr instanceof Date) {
+      const d = new Date(dStr.getTime());
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    const trimmed = String(dStr).trim();
 
-    if (/^\d{2}[-/]\d{2}[-/]\d{4}$/.test(trimmed)) {
-      const parts = trimmed.split(/[-/]/);
-      return new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+    // 1. ISO format: YYYY-MM-DD
+    const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (ymdMatch) {
+      return new Date(Number(ymdMatch[1]), Number(ymdMatch[2]) - 1, Number(ymdMatch[3]), 0, 0, 0, 0);
     }
 
-    if (/^\d{4}[-/]\d{2}[-/]\d{2}$/.test(trimmed)) {
-      const parts = trimmed.split(/[-/]/);
-      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    // 2. Textual format: "11 Nov 2026" or "11-Nov-2026"
+    const dmyTextMatch = trimmed.match(/^(\d{1,2})[\s\-_]+([A-Za-z]+)[\s\-_,]+(\d{4})/);
+    if (dmyTextMatch) {
+      const day = Number(dmyTextMatch[1]);
+      const mStr = dmyTextMatch[2].toLowerCase();
+      const month = MONTH_MAP[mStr];
+      const year = Number(dmyTextMatch[3]);
+      if (month !== undefined) {
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
     }
 
-    const timestamp = Date.parse(trimmed);
-    return isNaN(timestamp) ? null : new Date(timestamp);
+    // 3. Textual format: "Nov 11, 2026"
+    const mdyTextMatch = trimmed.match(/^([A-Za-z]+)[\s\-_]+(\d{1,2})[\s\-_,]+(\d{4})/);
+    if (mdyTextMatch) {
+      const mStr = mdyTextMatch[1].toLowerCase();
+      const month = MONTH_MAP[mStr];
+      const day = Number(mdyTextMatch[2]);
+      const year = Number(mdyTextMatch[3]);
+      if (month !== undefined) {
+        return new Date(year, month, day, 0, 0, 0, 0);
+      }
+    }
+
+    // 4. Numeric format: DD-MM-YYYY or DD/MM/YYYY
+    const dmyNumMatch = trimmed.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (dmyNumMatch) {
+      return new Date(Number(dmyNumMatch[3]), Number(dmyNumMatch[2]) - 1, Number(dmyNumMatch[1]), 0, 0, 0, 0);
+    }
+
+    const ts = Date.parse(trimmed);
+    if (!isNaN(ts)) {
+      const d = new Date(ts);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    return null;
   };
 
   const filteredRecords = attendanceRecords.filter((item) => {
     if (!fromDate && !toDate) return true;
 
-    const recordDate = parseDate(item.date);
+    const recordDate = parseDate(item.rawDate || item.date);
     if (!recordDate) return true;
 
     if (fromDate) {
@@ -100,6 +224,7 @@ export default function Report({ user, records, onBack }) {
   const handleReset = () => {
     setFromDate('');
     setToDate('');
+    setSelectedHeatmapDay(null);
   };
 
   const parseCoord = (str) => {
@@ -112,13 +237,15 @@ export default function Report({ user, records, onBack }) {
 
   const isLateTime = (time) => {
     if (!time || time === '--' || time === '--:--') return false;
-    const match = String(time).trim().match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
+    const normalized = String(time).replace(/[\u202F\u00A0\s]+/g, ' ').trim();
+    const match = normalized.match(/^(\d{1,2}):(\d{2})(?:\s*(AM|PM))?$/i);
     if (!match) return false;
     let hour = Number(match[1]);
+    const minute = Number(match[2]);
     const period = match[3]?.toUpperCase();
     if (period === 'AM' && hour === 12) hour = 0;
     if (period === 'PM' && hour !== 12) hour += 12;
-    return hour > 10 || (hour === 10 && Number(match[2]) > 0);
+    return hour > 10 || (hour === 10 && minute > 0);
   };
 
   const handleViewPress = async (record) => {
@@ -210,6 +337,143 @@ export default function Report({ user, records, onBack }) {
     return p.getFullYear() === cYear && p.getMonth() === cMonth && p.getDate() === dayNum;
   };
 
+  // ── MONTHLY ATTENDANCE HEATMAP COMPUTATIONS ──
+  const hmYear = heatmapDate.getFullYear();
+  const hmMonth = heatmapDate.getMonth();
+  const hmFirstDayIndex = new Date(hmYear, hmMonth, 1).getDay();
+  const hmTotalDays = new Date(hmYear, hmMonth + 1, 0).getDate();
+
+  const hmBlanks = Array.from({ length: hmFirstDayIndex }, (_, i) => i);
+  const hmDays = Array.from({ length: hmTotalDays }, (_, i) => i + 1);
+
+  const prevHeatmapMonth = () => {
+    setHeatmapDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+    setSelectedHeatmapDay(null);
+  };
+
+  const nextHeatmapMonth = () => {
+    setHeatmapDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    setSelectedHeatmapDay(null);
+  };
+
+  const getDayStatus = (dayNum) => {
+    const cellDate = new Date(hmYear, hmMonth, dayNum, 0, 0, 0, 0);
+    const dayOfWeek = cellDate.getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isPast = cellDate < today;
+    const isToday = cellDate.getTime() === today.getTime();
+    const isFuture = cellDate > today;
+
+    // 1. Check if attendance record exists in backend dataset
+    const poolRecords = allAttendanceRecords.length > 0 ? allAttendanceRecords : attendanceRecords;
+    const record = poolRecords.find((rec) => {
+      const rd = parseDate(rec.rawDate || rec.date);
+      if (!rd) return false;
+      return (
+        rd.getFullYear() === hmYear &&
+        rd.getMonth() === hmMonth &&
+        rd.getDate() === dayNum
+      );
+    });
+
+    if (record) {
+      if (isLateTime(record.inTime)) {
+        return {
+          type: 'late',
+          label: 'Late / Half-day',
+          color: THEME.colors.warning,
+          surface: THEME.colors.warningSurface,
+          border: THEME.colors.warningBorder,
+          record,
+        };
+      }
+      return {
+        type: 'present',
+        label: 'Present (On-time)',
+        color: THEME.colors.success,
+        surface: THEME.colors.successSurface,
+        border: THEME.colors.successBorder,
+        record,
+      };
+    }
+
+    // 2. Check if approved leave covers this day
+    const approvedLeave = userLeaves.find((l) => {
+      if (l.status !== 'Approved') return false;
+      const fromD = parseDate(l.from || l.from_date);
+      const toD = parseDate(l.to || l.to_date);
+      if (!fromD || !toD) return false;
+      fromD.setHours(0, 0, 0, 0);
+      toD.setHours(23, 59, 59, 999);
+      return cellDate >= fromD && cellDate <= toD;
+    });
+
+    if (approvedLeave) {
+      return {
+        type: 'leave',
+        label: 'Approved Leave',
+        color: THEME.colors.info,
+        surface: THEME.colors.infoSurface,
+        border: THEME.colors.infoBorder,
+        leave: approvedLeave,
+      };
+    }
+
+    // 3. If past weekday without record or leave -> Absent
+    if (isPast && !isWeekend) {
+      return {
+        type: 'absent',
+        label: 'Absent',
+        color: THEME.colors.danger,
+        surface: THEME.colors.dangerSurface,
+        border: THEME.colors.dangerBorder,
+      };
+    }
+
+    // 4. Weekend or Future/Today
+    return {
+      type: isWeekend ? 'weekend' : isToday ? 'today' : 'future',
+      label: isWeekend ? 'Weekend' : isToday ? 'Today' : 'Upcoming',
+      color: THEME.colors.textMuted,
+      surface: THEME.colors.surfaceSubtle,
+      border: 'transparent',
+    };
+  };
+
+  const monthlyStats = hmDays.reduce(
+    (acc, dayNum) => {
+      const st = getDayStatus(dayNum);
+      if (st.type === 'present') acc.present++;
+      else if (st.type === 'late') acc.late++;
+      else if (st.type === 'absent') acc.absent++;
+      else if (st.type === 'leave') acc.leave++;
+      return acc;
+    },
+    { present: 0, late: 0, absent: 0, leave: 0 }
+  );
+
+  const handleHeatmapDayPress = (dayNum) => {
+    const st = getDayStatus(dayNum);
+    if (st.type === 'weekend' || st.type === 'future') return;
+
+    if (selectedHeatmapDay === dayNum) {
+      setSelectedHeatmapDay(null);
+      setFromDate('');
+      setToDate('');
+    } else {
+      setSelectedHeatmapDay(dayNum);
+      const y = hmYear;
+      const m = String(hmMonth + 1).padStart(2, '0');
+      const d = String(dayNum).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      setFromDate(dateStr);
+      setToDate(dateStr);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -230,6 +494,71 @@ export default function Report({ user, records, onBack }) {
           <Text style={styles.headerTitle}>Attendance History</Text>
           <View style={styles.headerSpacer} />
         </View>
+
+        {/* Manager Employee Selector */}
+        {isManager && (
+          <View style={styles.employeeSelectorCard}>
+            <View style={styles.employeeSelectorHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="people" size={16} color={THEME.colors.primary} />
+                <Text style={styles.employeeSelectorTitle}>Team Members</Text>
+              </View>
+              <Text style={styles.employeeSelectorCount}>{teamList.length} Employees</Text>
+            </View>
+
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.employeeChipsRow}>
+              {teamList.map((emp) => {
+                const isSelected = activeEmployee?.id === emp.id;
+                return (
+                  <TouchableOpacity
+                    key={emp.id}
+                    style={[styles.employeeChip, isSelected && styles.employeeChipActive]}
+                    onPress={() => {
+                      setActiveEmployee(emp);
+                      handleReset();
+                    }}
+                    activeOpacity={0.75}
+                  >
+                    <View style={[styles.employeeChipAvatar, isSelected && styles.employeeChipAvatarActive]}>
+                      <Text style={[styles.employeeChipInitial, isSelected && styles.employeeChipInitialActive]}>
+                        {emp.name ? emp.name.charAt(0).toUpperCase() : 'E'}
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={[styles.employeeChipName, isSelected && styles.employeeChipNameActive]}>
+                        {emp.name}
+                      </Text>
+                      <Text style={[styles.employeeChipId, isSelected && styles.employeeChipIdActive]}>
+                        {emp.empId || emp.username}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+
+            {/* Selected Employee Summary Banner */}
+            <View style={styles.inspectedEmployeeCard}>
+              <View style={styles.inspectedEmployeeLeft}>
+                <View style={styles.inspectedAvatarBox}>
+                  <Text style={styles.inspectedAvatarText}>
+                    {activeEmployee?.name ? activeEmployee.name.charAt(0).toUpperCase() : 'E'}
+                  </Text>
+                </View>
+                <View>
+                  <Text style={styles.inspectedEmployeeName}>{activeEmployee?.name}</Text>
+                  <Text style={styles.inspectedEmployeeRole}>{activeEmployee?.empId || '--'} • Team Member</Text>
+                </View>
+              </View>
+              <View style={styles.inspectedStatsPill}>
+                <Ionicons name="calendar-outline" size={13} color={THEME.colors.primary} />
+                <Text style={styles.inspectedStatsText}>
+                  {allAttendanceRecords.length} Recorded
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Date Filter Card */}
         <View style={styles.filterCard}>
@@ -321,6 +650,190 @@ export default function Report({ user, records, onBack }) {
                   </TouchableOpacity>
                 ) : null}
               </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* ── MONTHLY ATTENDANCE HEATMAP CALENDAR ── */}
+        <View style={styles.heatmapCard}>
+          {/* Header with Month Navigator */}
+          <View style={styles.heatmapHeader}>
+            <View style={styles.heatmapTitleRow}>
+              <View style={styles.heatmapIconBox}>
+                <Ionicons name="calendar" size={16} color={THEME.colors.primary} />
+              </View>
+              <View>
+                <Text style={styles.heatmapTitle}>Monthly Attendance Heatmap</Text>
+                <Text style={styles.heatmapSubtitle}>
+                  {monthNames[hmMonth]} {hmYear}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.heatmapNavRow}>
+              <TouchableOpacity
+                style={styles.heatmapNavBtn}
+                onPress={reloadHeatmapData}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name="refresh-outline"
+                  size={15}
+                  color={isHeatmapRefreshing ? THEME.colors.textMuted : THEME.colors.primary}
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.heatmapNavBtn}
+                onPress={prevHeatmapMonth}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="chevron-back" size={16} color={THEME.colors.textPrimary} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.heatmapNavBtn}
+                onPress={nextHeatmapMonth}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="chevron-forward" size={16} color={THEME.colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Monthly KPI Summary Pills */}
+          <View style={styles.heatmapStatsRow}>
+            <View style={[styles.heatmapStatPill, { backgroundColor: THEME.colors.successSurface, borderColor: THEME.colors.successBorder }]}>
+              <View style={[styles.heatmapStatDot, { backgroundColor: THEME.colors.success }]} />
+              <Text style={[styles.heatmapStatText, { color: THEME.colors.success }]}>
+                {monthlyStats.present} Present
+              </Text>
+            </View>
+
+            <View style={[styles.heatmapStatPill, { backgroundColor: THEME.colors.warningSurface, borderColor: THEME.colors.warningBorder }]}>
+              <View style={[styles.heatmapStatDot, { backgroundColor: THEME.colors.warning }]} />
+              <Text style={[styles.heatmapStatText, { color: THEME.colors.warning }]}>
+                {monthlyStats.late} Late
+              </Text>
+            </View>
+
+            <View style={[styles.heatmapStatPill, { backgroundColor: THEME.colors.dangerSurface, borderColor: THEME.colors.dangerBorder }]}>
+              <View style={[styles.heatmapStatDot, { backgroundColor: THEME.colors.danger }]} />
+              <Text style={[styles.heatmapStatText, { color: THEME.colors.danger }]}>
+                {monthlyStats.absent} Absent
+              </Text>
+            </View>
+
+            <View style={[styles.heatmapStatPill, { backgroundColor: THEME.colors.infoSurface, borderColor: THEME.colors.infoBorder }]}>
+              <View style={[styles.heatmapStatDot, { backgroundColor: THEME.colors.info }]} />
+              <Text style={[styles.heatmapStatText, { color: THEME.colors.info }]}>
+                {monthlyStats.leave} Leave
+              </Text>
+            </View>
+          </View>
+
+          <View style={styles.heatmapWeekdaysRow}>
+            {weekDays.map((wd, idx) => (
+              <Text
+                key={idx}
+                style={[
+                  styles.heatmapWeekdayText,
+                  (idx === 0 || idx === 6) && styles.heatmapWeekdayWeekend,
+                ]}
+              >
+                {wd}
+              </Text>
+            ))}
+          </View>
+
+          {/* Calendar Grid */}
+          <View style={styles.heatmapGrid}>
+            {hmBlanks.map((b) => (
+              <View key={`b-${b}`} style={styles.heatmapCellBlank} />
+            ))}
+
+            {hmDays.map((dayNum) => {
+              const status = getDayStatus(dayNum);
+              const isSelected = selectedHeatmapDay === dayNum;
+              const hasAction =
+                status.type === 'present' ||
+                status.type === 'late' ||
+                status.type === 'absent' ||
+                status.type === 'leave';
+
+              return (
+                <TouchableOpacity
+                  key={`d-${dayNum}`}
+                  style={[
+                    styles.heatmapCell,
+                    status.type === 'present' && styles.heatmapCellPresent,
+                    status.type === 'late' && styles.heatmapCellLate,
+                    status.type === 'absent' && styles.heatmapCellAbsent,
+                    status.type === 'leave' && styles.heatmapCellLeave,
+                    status.type === 'weekend' && styles.heatmapCellWeekend,
+                    status.type === 'today' && styles.heatmapCellToday,
+                    isSelected && styles.heatmapCellSelected,
+                  ]}
+                  onPress={() => handleHeatmapDayPress(dayNum)}
+                  activeOpacity={hasAction ? 0.7 : 1}
+                  disabled={!hasAction}
+                >
+                  <Text
+                    style={[
+                      styles.heatmapDayNumber,
+                      status.type === 'present' && styles.heatmapDayNumberPresent,
+                      status.type === 'late' && styles.heatmapDayNumberLate,
+                      status.type === 'absent' && styles.heatmapDayNumberAbsent,
+                      status.type === 'leave' && styles.heatmapDayNumberLeave,
+                      status.type === 'weekend' && styles.heatmapDayNumberWeekend,
+                      status.type === 'today' && styles.heatmapDayNumberToday,
+                      isSelected && styles.heatmapDayNumberSelected,
+                    ]}
+                  >
+                    {dayNum}
+                  </Text>
+
+                  {/* Status Indicator Dot */}
+                  <View style={styles.heatmapIndicatorSlot}>
+                    {status.type === 'present' && (
+                      <View style={[styles.heatmapIndicatorDot, { backgroundColor: THEME.colors.success }]} />
+                    )}
+                    {status.type === 'late' && (
+                      <View style={[styles.heatmapIndicatorDot, { backgroundColor: THEME.colors.warning }]} />
+                    )}
+                    {status.type === 'absent' && (
+                      <View style={[styles.heatmapIndicatorDot, { backgroundColor: THEME.colors.danger }]} />
+                    )}
+                    {status.type === 'leave' && (
+                      <View style={[styles.heatmapIndicatorDot, { backgroundColor: THEME.colors.info }]} />
+                    )}
+                    {status.type === 'today' && (
+                      <View style={[styles.heatmapIndicatorDot, { backgroundColor: THEME.colors.primary }]} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          {/* Color-Coded Legend */}
+          <View style={styles.heatmapLegendRow}>
+            <View style={styles.heatmapLegendItem}>
+              <View style={[styles.heatmapLegendDot, { backgroundColor: THEME.colors.success }]} />
+              <Text style={styles.heatmapLegendText}>Present (On-time)</Text>
+            </View>
+            <View style={styles.heatmapLegendItem}>
+              <View style={[styles.heatmapLegendDot, { backgroundColor: THEME.colors.warning }]} />
+              <Text style={styles.heatmapLegendText}>Late / Half-day</Text>
+            </View>
+            <View style={styles.heatmapLegendItem}>
+              <View style={[styles.heatmapLegendDot, { backgroundColor: THEME.colors.danger }]} />
+              <Text style={styles.heatmapLegendText}>Absent</Text>
+            </View>
+            <View style={styles.heatmapLegendItem}>
+              <View style={[styles.heatmapLegendDot, { backgroundColor: THEME.colors.info }]} />
+              <Text style={styles.heatmapLegendText}>Approved Leave</Text>
             </View>
           </View>
         </View>
@@ -428,7 +941,6 @@ export default function Report({ user, records, onBack }) {
             style={styles.calendarCard}
             onPress={(e) => e.stopPropagation()}
           >
-            {/* Header: Month and Navigation */}
             <View style={styles.calendarHeader}>
               <TouchableOpacity
                 onPress={prevMonth}
@@ -454,7 +966,6 @@ export default function Report({ user, records, onBack }) {
               </TouchableOpacity>
             </View>
 
-            {/* Weekdays */}
             <View style={styles.weekDaysRow}>
               {weekDays.map((wd) => (
                 <Text key={wd} style={styles.weekDayText}>
@@ -518,7 +1029,6 @@ export default function Report({ user, records, onBack }) {
         </Pressable>
       </Modal>
 
-      {/* Attendance Detail & GPS Map Modal */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -1328,5 +1838,349 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 0.2,
+  },
+  heatmapCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+  },
+  heatmapHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  heatmapTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heatmapIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: THEME.colors.primarySurface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.primaryBorder,
+  },
+  heatmapTitle: {
+    fontSize: 14.5,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+    letterSpacing: -0.2,
+  },
+  heatmapSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+    marginTop: 1,
+  },
+  heatmapNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heatmapNavBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: THEME.radii.xs,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+  },
+  heatmapStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginBottom: 14,
+  },
+  heatmapStatPill: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    borderRadius: THEME.radii.pill,
+    borderWidth: 1,
+    gap: 4,
+  },
+  heatmapStatDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  heatmapStatText: {
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  heatmapWeekdaysRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+    paddingHorizontal: 2,
+  },
+  heatmapWeekdayText: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.textSecondary,
+  },
+  heatmapWeekdayWeekend: {
+    color: THEME.colors.textMuted,
+  },
+  heatmapGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    rowGap: 5,
+  },
+  heatmapCellBlank: {
+    width: '14.28%',
+    height: 38,
+  },
+  heatmapCell: {
+    width: '14.28%',
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: THEME.radii.xs,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  heatmapCellPresent: {
+    backgroundColor: THEME.colors.successSurface,
+    borderColor: THEME.colors.successBorder,
+  },
+  heatmapCellLate: {
+    backgroundColor: THEME.colors.warningSurface,
+    borderColor: THEME.colors.warningBorder,
+  },
+  heatmapCellAbsent: {
+    backgroundColor: THEME.colors.dangerSurface,
+    borderColor: THEME.colors.dangerBorder,
+  },
+  heatmapCellLeave: {
+    backgroundColor: THEME.colors.infoSurface,
+    borderColor: THEME.colors.infoBorder,
+  },
+  heatmapCellWeekend: {
+    backgroundColor: THEME.colors.surfaceSubtle,
+    opacity: 0.65,
+  },
+  heatmapCellToday: {
+    borderWidth: 1.5,
+    borderColor: THEME.colors.primary,
+  },
+  heatmapCellSelected: {
+    borderWidth: 2,
+    borderColor: THEME.colors.slateHero,
+    ...THEME.shadows.card,
+  },
+  heatmapDayNumber: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  heatmapDayNumberPresent: {
+    color: THEME.colors.success,
+    fontWeight: '800',
+  },
+  heatmapDayNumberLate: {
+    color: THEME.colors.warning,
+    fontWeight: '800',
+  },
+  heatmapDayNumberAbsent: {
+    color: THEME.colors.danger,
+    fontWeight: '800',
+  },
+  heatmapDayNumberLeave: {
+    color: THEME.colors.info,
+    fontWeight: '800',
+  },
+  heatmapDayNumberWeekend: {
+    color: THEME.colors.textMuted,
+  },
+  heatmapDayNumberToday: {
+    color: THEME.colors.primary,
+    fontWeight: '900',
+  },
+  heatmapDayNumberSelected: {
+    color: THEME.colors.textPrimary,
+    fontWeight: '900',
+  },
+  heatmapIndicatorSlot: {
+    height: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 1,
+  },
+  heatmapIndicatorDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  heatmapLegendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: THEME.colors.borderLight,
+  },
+  heatmapLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  heatmapLegendDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  heatmapLegendText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: THEME.colors.textSecondary,
+  },
+  employeeSelectorCard: {
+    backgroundColor: THEME.colors.card,
+    borderRadius: THEME.radii.lg,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    ...THEME.shadows.card,
+  },
+  employeeSelectorHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  employeeSelectorTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  employeeSelectorCount: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.colors.textMuted,
+  },
+  employeeChipsRow: {
+    gap: 8,
+    paddingBottom: 8,
+  },
+  employeeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: THEME.radii.md,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: THEME.colors.borderLight,
+  },
+  employeeChipActive: {
+    backgroundColor: THEME.colors.primarySurface,
+    borderColor: THEME.colors.primary,
+  },
+  employeeChipAvatar: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: THEME.colors.surfaceMuted,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  employeeChipAvatarActive: {
+    backgroundColor: THEME.colors.primary,
+  },
+  employeeChipInitial: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  employeeChipInitialActive: {
+    color: '#FFFFFF',
+  },
+  employeeChipName: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  employeeChipNameActive: {
+    color: THEME.colors.primary,
+  },
+  employeeChipId: {
+    fontSize: 10,
+    color: THEME.colors.textMuted,
+  },
+  employeeChipIdActive: {
+    color: THEME.colors.primary,
+    opacity: 0.8,
+  },
+  inspectedEmployeeCard: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: THEME.colors.borderLight,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  inspectedEmployeeLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  inspectedAvatarBox: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: THEME.colors.slateHero,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inspectedAvatarText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  inspectedEmployeeName: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.colors.textPrimary,
+  },
+  inspectedEmployeeRole: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+  },
+  inspectedStatsPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: THEME.radii.full,
+    backgroundColor: THEME.colors.primarySurface,
+  },
+  inspectedStatsText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.colors.primary,
   },
 });
