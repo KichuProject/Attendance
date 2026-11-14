@@ -20,12 +20,20 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '../services/api';
 import THEME from '../constants/theme';
 
-export default function Register({ onRegister, onNavigateLogin }) {
+export default function Register({ onRegister, onNavigateLogin, navigation }) {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState('employee');
+
+  const handleNavigateLogin = () => {
+    if (onNavigateLogin) {
+      onNavigateLogin();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  };
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -87,15 +95,14 @@ export default function Register({ onRegister, onNavigateLogin }) {
       const res = await api.register(name.trim(), username.trim(), password, role);
 
       if (res.success && res.user) {
-        const idLabel = res.user.role === 'manager' ? 'Manager ID' : 'Employee ID';
-        const roleLabel = res.user.role === 'manager' ? 'Manager' : 'Employee';
+        const isUserHR = res.user.role === 'hr' || res.user.role === 'manager';
+        const idLabel = isUserHR ? 'HR ID' : 'Employee ID';
+        const roleLabel = isUserHR ? 'HR' : 'Employee';
         showAlert(
           'Registration Successful',
           `Welcome to Tech Sigaram, ${res.user.name}!\nYour ${idLabel} is: ${res.user.empId}\nRole: ${roleLabel}\n\nPlease sign in with your credentials.`,
           () => {
-            if (onNavigateLogin) {
-              onNavigateLogin();
-            }
+            handleNavigateLogin();
           }
         );
       } else {
@@ -129,16 +136,14 @@ export default function Register({ onRegister, onNavigateLogin }) {
         >
           {/* Header */}
           <View style={styles.headerContainer}>
-            {onNavigateLogin && (
-              <TouchableOpacity
-                onPress={onNavigateLogin}
-                style={styles.backButton}
-                activeOpacity={0.7}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name="arrow-back" size={20} color={THEME.colors.textPrimary} />
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity
+              onPress={handleNavigateLogin}
+              style={styles.backButton}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="arrow-back" size={20} color={THEME.colors.textPrimary} />
+            </TouchableOpacity>
 
             <View style={styles.logoCardWrapper}>
               <View style={styles.logoCard}>
@@ -204,23 +209,23 @@ export default function Register({ onRegister, onNavigateLogin }) {
                 <TouchableOpacity
                   style={[
                     styles.rolePickerOption,
-                    role === 'manager' && styles.rolePickerOptionActiveManager,
+                    (role === 'hr' || role === 'manager') && styles.rolePickerOptionActiveManager,
                   ]}
-                  onPress={() => setRole('manager')}
+                  onPress={() => setRole('hr')}
                   activeOpacity={0.8}
                 >
                   <Ionicons
-                    name="briefcase"
+                    name="shield-checkmark"
                     size={16}
-                    color={role === 'manager' ? THEME.colors.slateHero : THEME.colors.textSecondary}
+                    color={(role === 'hr' || role === 'manager') ? THEME.colors.slateHero : THEME.colors.textSecondary}
                   />
                   <Text
                     style={[
                       styles.rolePickerText,
-                      role === 'manager' && styles.rolePickerTextActiveManager,
+                      (role === 'hr' || role === 'manager') && styles.rolePickerTextActiveManager,
                     ]}
                   >
-                    Manager
+                    HR
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -491,7 +496,7 @@ export default function Register({ onRegister, onNavigateLogin }) {
           <View style={styles.footerContainer}>
             <Text style={styles.footerText}>Already have an account? </Text>
             <TouchableOpacity
-              onPress={onNavigateLogin}
+              onPress={handleNavigateLogin}
               activeOpacity={0.7}
               hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
             >

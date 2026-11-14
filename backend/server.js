@@ -7,6 +7,7 @@ const { initializeDatabase } = require('./config/db');
 const authRoutes = require('./routes/auth');
 const attendanceRoutes = require('./routes/attendance');
 const leaveRoutes = require('./routes/leave');
+const projectRoutes = require('./routes/project');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -27,6 +28,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leave', leaveRoutes);
+app.use('/api/projects', projectRoutes);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {

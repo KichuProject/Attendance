@@ -27,10 +27,11 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ error: 'Username already taken' });
     }
 
-    const userRole = (role && role.toLowerCase() === 'manager') ? 'manager' : 'employee';
+    const reqRole = (role || '').toLowerCase().trim();
+    const userRole = (reqRole === 'hr' || reqRole === 'manager') ? 'hr' : 'employee';
     const [maxIdRows] = await pool.query('SELECT MAX(id) AS maxId FROM users');
     const nextId = (maxIdRows[0].maxId || 0) + 1;
-    const employeeId = userRole === 'manager' ? `MGR-${String(1000 + nextId)}` : `EMP-${String(1000 + nextId)}`;
+    const employeeId = userRole === 'hr' ? `HR-${String(1000 + nextId)}` : `EMP-${String(1000 + nextId)}`;
     const employeeName = name.trim();
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -46,13 +47,14 @@ router.post('/register', async (req, res) => {
       name: employeeName,
       empId: employeeId,
       role: userRole,
+      project: null,
     };
 
     const token = jwt.sign(newUser, JWT_SECRET, { expiresIn: '1h' });
 
     res.status(201).json({
       success: true,
-      message: `${userRole === 'manager' ? 'Manager' : 'User'} registered successfully`,
+      message: `${userRole === 'hr' ? 'HR' : 'Employee'} registered successfully`,
       token,
       expiresIn: 3600,
       user: newUser,
@@ -87,12 +89,40 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid username or password' });
     }
 
+    // Fetch user's assigned project
+    let assignedProject = null;
+    try {
+      const [projectRows] = await pool.query(`
+        SELECT p.id, p.name, p.code, p.client, p.color, ep.role_in_project
+        FROM employee_projects ep
+        JOIN projects p ON ep.project_id = p.id
+        WHERE ep.user_id = ?
+        LIMIT 1
+      `, [user.id]);
+
+      if (projectRows.length > 0) {
+        assignedProject = {
+          id: projectRows[0].id,
+          name: projectRows[0].name,
+          code: projectRows[0].code,
+          client: projectRows[0].client,
+          color: projectRows[0].color,
+          roleInProject: projectRows[0].role_in_project || 'Member',
+        };
+      }
+    } catch (_projErr) {
+      // Ignore if projects table is empty
+    }
+
+    const userRole = (user.role === 'manager' || user.role === 'hr' || user.username === 'hr' || user.username === 'manager') ? 'hr' : 'employee';
+
     const userData = {
       id: user.id,
       username: user.username,
       empId: user.emp_id,
       name: user.name,
-      role: user.role || (user.username === 'manager' ? 'manager' : 'employee'),
+      role: userRole,
+      project: assignedProject,
     };
 
     const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '1h' });

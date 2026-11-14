@@ -1,5 +1,7 @@
 // API Service for connecting Expo frontend to deployed Node.js backend on Render
-export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
+// export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
+ export const API_BASE_URL = 'http://192.168.1.8:5001/api';
+
 
 export const api = {
   // Authentication
@@ -166,45 +168,231 @@ export const api = {
     }
   },
 
-  // Manager: Get all employees with live attendance status
+  // HR: Get all employees with live attendance status & mapped projects
   getTeamSummary: async () => {
+    const defaultProjectMappings = {
+      2: {
+        id: 1,
+        name: 'AI Attendance Suite',
+        code: 'PRJ-ATTEND',
+        color: '#EA580C',
+        client: 'Tech Sigaram Internal',
+        roleInProject: 'Lead Developer',
+      },
+      30001: {
+        id: 2,
+        name: 'FinTech Mobile Banking',
+        code: 'PRJ-FINTECH',
+        color: '#3B82F6',
+        client: 'Apex Financial Corp',
+        roleInProject: 'Member',
+      },
+      30002: {
+        id: 3,
+        name: 'Supply Chain Logistics',
+        code: 'PRJ-LOGIX',
+        color: '#10B981',
+        client: 'Global Cargo Ltd',
+        roleInProject: 'Member',
+      },
+    };
+
     try {
       const res = await fetch(`${API_BASE_URL}/attendance/team-summary`);
       if (res.ok) {
         const json = await res.json();
         if (json.success && Array.isArray(json.employees) && json.employees.length > 0) {
-          return json;
+          const employees = json.employees
+            .filter(
+              (e) =>
+                e.role !== 'hr' &&
+                e.role !== 'manager' &&
+                e.username !== 'hr' &&
+                e.username !== 'hrr'
+            )
+            .map((e) => {
+              const status = e.status || e.todayStatus || 'NOT IN';
+              const totalDays = e.totalDays ?? e.totalPunches ?? 0;
+              return {
+                ...e,
+                status,
+                todayStatus: status,
+                totalDays,
+                totalPunches: totalDays,
+                project: e.project || defaultProjectMappings[e.id] || null,
+              };
+            });
+          return { success: true, count: employees.length, employees };
         }
       }
     } catch (e) {
       console.log('getTeamSummary remote fallback:', e.message);
     }
 
-    // High-reliability live fallback: fetch each employee status from live Render endpoints
+    // High-reliability live fallback: fetch each employee status from live endpoints
     const knownTeam = [
-      { id: 2, name: 'Kishore', username: 'kishore', empId: 'EMP-1002', role: 'employee' },
-      { id: 30001, name: 'Priya Sharma', username: 'priya', empId: 'EMP-1003', role: 'employee' },
-      { id: 30002, name: 'Rahul Verma', username: 'rahul', empId: 'EMP-1004', role: 'employee' },
+      {
+        id: 2,
+        name: 'Kishore',
+        username: 'kishore',
+        empId: 'EMP-1002',
+        role: 'employee',
+        project: defaultProjectMappings[2],
+      },
+      {
+        id: 30001,
+        name: 'Priya',
+        username: 'priya',
+        empId: 'EMP-1003',
+        role: 'employee',
+        project: defaultProjectMappings[30001],
+      },
+      {
+        id: 30002,
+        name: 'Ragul',
+        username: 'ragul',
+        empId: 'EMP-1004',
+        role: 'employee',
+        project: defaultProjectMappings[30002],
+      },
     ];
 
     try {
       const results = await Promise.all(
         knownTeam.map(async (emp) => {
           const stat = await api.getTodayStatus(emp.id);
+          const status = stat.today?.status || 'NOT IN';
+          const totalDays = stat.totalDays || 0;
           return {
             ...emp,
-            todayStatus: stat.today?.status || 'NOT IN',
+            status,
+            todayStatus: status,
             inTime: stat.today?.inTime || null,
             outTime: stat.today?.outTime || null,
             latitude: stat.today?.latitude || null,
             longitude: stat.today?.longitude || null,
-            totalPunches: stat.totalDays || 0,
+            totalDays,
+            totalPunches: totalDays,
           };
         })
       );
       return { success: true, count: results.length, employees: results };
-    } catch (err) {
+    } catch (_err) {
       return { success: true, count: knownTeam.length, employees: knownTeam };
+    }
+  },
+
+  // ── Project Management & Employee Mapping (HR) ──
+  getProjects: async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/projects`);
+      if (!res.ok) {
+        return { success: false, projects: [], error: `Server returned ${res.status}` };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('API getProjects error:', error);
+      return {
+        success: true,
+        count: 4,
+        projects: [
+          {
+            id: 1,
+            name: 'AI Attendance Suite',
+            code: 'PRJ-ATTEND',
+            client: 'Tech Sigaram Internal',
+            description: 'Biometric & geofenced workforce management platform',
+            color: '#EA580C',
+            status: 'active',
+            memberCount: 1,
+          },
+          {
+            id: 2,
+            name: 'FinTech Mobile Banking',
+            code: 'PRJ-FINTECH',
+            client: 'Apex Financial Corp',
+            description: 'Next-gen retail banking app with instant settlement',
+            color: '#3B82F6',
+            status: 'active',
+            memberCount: 1,
+          },
+          {
+            id: 3,
+            name: 'Supply Chain Logistics',
+            code: 'PRJ-LOGIX',
+            client: 'Global Cargo Ltd',
+            description: 'Real-time telemetry and freight tracking portal',
+            color: '#10B981',
+            status: 'active',
+            memberCount: 1,
+          },
+          {
+            id: 4,
+            name: 'Cloud HR Portal',
+            code: 'PRJ-CLOUDHR',
+            client: 'Enterprise Corp',
+            description: 'Centralized employee self-service and payroll suite',
+            color: '#8B5CF6',
+            status: 'active',
+            memberCount: 1,
+          },
+        ],
+      };
+    }
+  },
+
+  getUserProject: async (userId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/projects/user/${userId}`);
+      if (!res.ok) {
+        return { success: false, project: null };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('API getUserProject error:', error);
+      return { success: false, project: null };
+    }
+  },
+
+  assignProject: async (userId, projectId, roleInProject = 'Member') => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/projects/assign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, projectId, roleInProject }),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API assignProject error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  unassignProject: async (userId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/projects/unassign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API unassignProject error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  createProject: async (projectData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/projects`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(projectData),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API createProject error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
     }
   },
 };

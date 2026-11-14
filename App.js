@@ -1,26 +1,113 @@
-import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { StyleSheet, View, ActivityIndicator, Alert, Text } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+
 import Login from './screen/Login';
 import Register from './screen/Register';
 import Home from './screen/Home';
 import Report from './screen/Report';
 import { storage, ONE_HOUR_MS } from './services/storage';
 
+export const navigationRef = createNavigationContainerRef();
+
+const AuthStack = createNativeStackNavigator();
+const AppStack = createNativeStackNavigator();
+
+function AuthStackScreen({ onLogin, onRegister }) {
+  return (
+    <AuthStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+        contentStyle: { backgroundColor: '#F8FAFC' },
+      }}
+    >
+      <AuthStack.Screen name="Login">
+        {(props) => (
+          <Login
+            {...props}
+            onLogin={onLogin}
+            onSignUp={() => props.navigation.navigate('Register')}
+          />
+        )}
+      </AuthStack.Screen>
+      <AuthStack.Screen name="Register">
+        {(props) => (
+          <Register
+            {...props}
+            onRegister={onRegister}
+            onNavigateLogin={() => props.navigation.goBack()}
+          />
+        )}
+      </AuthStack.Screen>
+    </AuthStack.Navigator>
+  );
+}
+
+function AppStackScreen({
+  userData,
+  onLogout,
+  attendanceRecords,
+  setAttendanceRecords,
+  leaveRequests,
+  addLeaveRequest,
+}) {
+  return (
+    <AppStack.Navigator
+      screenOptions={{
+        headerShown: false,
+        animation: 'slide_from_right',
+        contentStyle: { backgroundColor: '#F8FAFC' },
+      }}
+    >
+      <AppStack.Screen name="Home">
+        {(props) => (
+          <Home
+            {...props}
+            user={userData}
+            onLogout={onLogout}
+            onNavigateReport={(targetEmp) => {
+              props.navigation.navigate('Report', {
+                initialEmployee: targetEmp || null,
+              });
+            }}
+            records={attendanceRecords}
+            setRecords={setAttendanceRecords}
+            leaveRequests={leaveRequests}
+            addLeaveRequest={addLeaveRequest}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Report">
+        {(props) => (
+          <Report
+            {...props}
+            user={userData}
+            initialEmployee={props.route.params?.initialEmployee || null}
+            records={attendanceRecords}
+            onBack={() => props.navigation.goBack()}
+          />
+        )}
+      </AppStack.Screen>
+    </AppStack.Navigator>
+  );
+}
+
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('login');
   const [userData, setUserData] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
   const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [leaveRequests, setLeaveRequests] = useState([]);
-  const [selectedEmployeeForReport, setSelectedEmployeeForReport] = useState(null);
 
   const sessionTimerRef = useRef(null);
 
   // Auto-logout trigger when 1-hour session reaches zero
-  const handleSessionExpired = async () => {
+  const handleSessionExpired = useCallback(async () => {
     if (sessionTimerRef.current) {
       clearTimeout(sessionTimerRef.current);
       sessionTimerRef.current = null;
@@ -28,12 +115,14 @@ export default function App() {
     await storage.clearAuthSession();
     setUserData(null);
     setAttendanceRecords([]);
-    setCurrentScreen('login');
-    Alert.alert('Session Expired', 'Your 1-hour session has expired. Please log in again to continue.');
-  };
+    Alert.alert(
+      'Session Expired',
+      'Your 1-hour session has expired. Please log in again to continue.'
+    );
+  }, []);
 
   // Schedule auto-logout timer for remaining milliseconds
-  const scheduleSessionExpiryTimer = (remainingMs) => {
+  const scheduleSessionExpiryTimer = useCallback((remainingMs) => {
     if (sessionTimerRef.current) {
       clearTimeout(sessionTimerRef.current);
       sessionTimerRef.current = null;
@@ -45,7 +134,7 @@ export default function App() {
     sessionTimerRef.current = setTimeout(() => {
       handleSessionExpired();
     }, remainingMs);
-  };
+  }, [handleSessionExpired]);
 
   // Check stored session on app launch
   useEffect(() => {
@@ -56,7 +145,6 @@ export default function App() {
           const remaining = session.expiresAt - Date.now();
           if (remaining > 0) {
             setUserData(session.user);
-            setCurrentScreen('home');
             scheduleSessionExpiryTimer(remaining);
           } else {
             await storage.clearAuthSession();
@@ -76,7 +164,7 @@ export default function App() {
         clearTimeout(sessionTimerRef.current);
       }
     };
-  }, []);
+  }, [scheduleSessionExpiryTimer]);
 
   const addLeaveRequest = (req) => {
     setLeaveRequests((prev) => [
@@ -92,7 +180,6 @@ export default function App() {
       await storage.saveAuthSession(data.token, data, ONE_HOUR_MS);
       scheduleSessionExpiryTimer(ONE_HOUR_MS);
     }
-    setCurrentScreen('home');
   };
 
   const handleRegister = async (data) => {
@@ -101,7 +188,6 @@ export default function App() {
       await storage.saveAuthSession(data.token, data, ONE_HOUR_MS);
       scheduleSessionExpiryTimer(ONE_HOUR_MS);
     }
-    setCurrentScreen('home');
   };
 
   const handleLogout = async () => {
@@ -112,7 +198,6 @@ export default function App() {
     await storage.clearAuthSession();
     setUserData(null);
     setAttendanceRecords([]);
-    setCurrentScreen('login');
   };
 
   if (isInitializing) {
@@ -126,46 +211,28 @@ export default function App() {
   }
 
   return (
-    <SafeAreaProvider style={styles.container}>
-      <StatusBar style="dark" />
-      {currentScreen === 'login' && (
-        <Login
-          onLogin={handleLogin}
-          onSignUp={() => setCurrentScreen('register')}
-        />
-      )}
-      {currentScreen === 'register' && (
-        <Register
-          onRegister={handleRegister}
-          onNavigateLogin={() => setCurrentScreen('login')}
-        />
-      )}
-      {currentScreen === 'home' && (
-        <Home
-          user={userData}
-          onLogout={handleLogout}
-          onNavigateReport={(targetEmp) => {
-            setSelectedEmployeeForReport(targetEmp || null);
-            setCurrentScreen('report');
-          }}
-          records={attendanceRecords}
-          setRecords={setAttendanceRecords}
-          leaveRequests={leaveRequests}
-          addLeaveRequest={addLeaveRequest}
-        />
-      )}
-      {currentScreen === 'report' && (
-        <Report
-          user={userData}
-          initialEmployee={selectedEmployeeForReport}
-          records={attendanceRecords}
-          onBack={() => {
-            setSelectedEmployeeForReport(null);
-            setCurrentScreen('home');
-          }}
-        />
-      )}
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaProvider style={styles.container}>
+        <NavigationContainer ref={navigationRef}>
+          <StatusBar style="dark" translucent backgroundColor="transparent" />
+          {userData ? (
+            <AppStackScreen
+              userData={userData}
+              onLogout={handleLogout}
+              attendanceRecords={attendanceRecords}
+              setAttendanceRecords={setAttendanceRecords}
+              leaveRequests={leaveRequests}
+              addLeaveRequest={addLeaveRequest}
+            />
+          ) : (
+            <AuthStackScreen
+              onLogin={handleLogin}
+              onRegister={handleRegister}
+            />
+          )}
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 

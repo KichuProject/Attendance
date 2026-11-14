@@ -203,7 +203,7 @@ router.get('/history/:userId', async (req, res) => {
   }
 });
 
-// 5. Get all team employees with their today attendance status (Manager)
+// 5. Get all team employees with their today attendance status & mapped project (HR)
 router.get('/team-summary', async (req, res) => {
   try {
     const [rows] = await pool.query(`
@@ -213,32 +213,57 @@ router.get('/team-summary', async (req, res) => {
              a.latitude, a.longitude,
              a.out_latitude, a.out_longitude,
              (SELECT COUNT(*) FROM attendance WHERE user_id = u.id AND status IN ('IN', 'OUT')) as total_punches,
-             (SELECT COUNT(*) FROM leave_requests WHERE user_id = u.id AND status = 'Approved') as total_leaves
+             (SELECT COUNT(*) FROM leave_requests WHERE user_id = u.id AND status = 'Approved') as total_leaves,
+             (SELECT id FROM leave_requests WHERE user_id = u.id AND status = 'Approved' AND CURDATE() BETWEEN from_date AND to_date LIMIT 1) as active_leave_id,
+             p.id as project_id,
+             p.name as project_name,
+             p.code as project_code,
+             p.color as project_color,
+             p.client as project_client,
+             ep.role_in_project
       FROM users u
       LEFT JOIN attendance a ON u.id = a.user_id AND a.date = CURDATE()
-      WHERE u.role != 'manager'
+      LEFT JOIN employee_projects ep ON u.id = ep.user_id
+      LEFT JOIN projects p ON ep.project_id = p.id
+      WHERE u.role != 'manager' AND u.role != 'hr' AND u.username != 'hr' AND u.username != 'hrr' AND u.username != 'manager'
       ORDER BY u.name ASC
     `);
 
     res.json({
       success: true,
       count: rows.length,
-      employees: rows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        username: r.username,
-        empId: r.emp_id,
-        role: r.role,
-        todayStatus: r.today_status || 'NOT IN',
-        inTime: r.in_time || null,
-        outTime: r.out_time || null,
-        latitude: r.latitude || null,
-        longitude: r.longitude || null,
-        outLatitude: r.out_latitude || null,
-        outLongitude: r.out_longitude || null,
-        totalPunches: r.total_punches || 0,
-        totalLeaves: r.total_leaves || 0,
-      })),
+      employees: rows.map((r) => {
+        let finalStatus = r.today_status;
+        if (!finalStatus) {
+          finalStatus = r.active_leave_id ? 'LEAVE' : 'NOT IN';
+        }
+        return {
+          id: r.id,
+          name: r.name,
+          username: r.username,
+          empId: r.emp_id,
+          role: r.role,
+          status: finalStatus,
+          todayStatus: finalStatus,
+          inTime: r.in_time || null,
+          outTime: r.out_time || null,
+          latitude: r.latitude || null,
+          longitude: r.longitude || null,
+          outLatitude: r.out_latitude || null,
+          outLongitude: r.out_longitude || null,
+          totalDays: r.total_punches || 0,
+          totalPunches: r.total_punches || 0,
+          totalLeaves: r.total_leaves || 0,
+          project: r.project_id ? {
+            id: r.project_id,
+            name: r.project_name,
+            code: r.project_code,
+            color: r.project_color || '#EA580C',
+            client: r.project_client || 'Tech Sigaram',
+            roleInProject: r.role_in_project || 'Member',
+          } : null,
+        };
+      }),
     });
   } catch (error) {
     console.error('Fetch team summary error:', error);

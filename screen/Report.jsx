@@ -16,34 +16,43 @@ import { WebView } from 'react-native-webview';
 import { api } from '../services/api';
 import THEME from '../constants/theme';
 
-export default function Report({ user, initialEmployee, records, onBack }) {
-  const isManager = user?.role === 'manager';
+export default function Report({ user, initialEmployee, records, onBack, route, navigation }) {
+  const isHR = user?.role === 'hr' || user?.role === 'manager';
 
-  const defaultEmployee = initialEmployee || (isManager ? { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee' } : user);
+  const effectiveInitial = initialEmployee || route?.params?.initialEmployee || null;
+  const defaultEmployee = effectiveInitial || (isHR ? { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee' } : user);
   const [activeEmployee, setActiveEmployee] = useState(defaultEmployee);
 
+  const handleBack = () => {
+    if (onBack) {
+      onBack();
+    } else if (navigation?.canGoBack?.()) {
+      navigation.goBack();
+    }
+  };
+
   const [teamList, setTeamList] = useState([
-    { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee' },
-    { id: 30001, name: 'Priya Sharma', empId: 'EMP-1003', role: 'employee' },
-    { id: 30002, name: 'Rahul Verma', empId: 'EMP-1004', role: 'employee' },
+    { id: 2, name: 'Kishore', empId: 'EMP-1002', role: 'employee', project: { name: 'AI Attendance Suite', code: 'PRJ-ATTEND', color: '#EA580C' } },
+    { id: 30001, name: 'Priya Sharma', empId: 'EMP-1003', role: 'employee', project: { name: 'FinTech Mobile Banking', code: 'PRJ-FINTECH', color: '#3B82F6' } },
+    { id: 30002, name: 'Rahul Verma', empId: 'EMP-1004', role: 'employee', project: { name: 'Supply Chain Logistics', code: 'PRJ-LOGIX', color: '#10B981' } },
   ]);
 
-  const targetUserId = isManager ? (activeEmployee?.id || 2) : user?.id;
+  const targetUserId = isHR ? (activeEmployee?.id || 2) : user?.id;
 
   useEffect(() => {
     async function loadTeam() {
-      if (!isManager) return;
+      if (!isHR) return;
       try {
         const res = await api.getTeamSummary();
         if (res.success && Array.isArray(res.employees) && res.employees.length > 0) {
           setTeamList(res.employees);
         }
       } catch (err) {
-        console.log('Error loading team for manager report:', err);
+        console.log('Error loading team for HR report:', err);
       }
     }
     loadTeam();
-  }, [isManager]);
+  }, [isHR]);
 
   const [selectedRecord, setSelectedRecord] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -484,7 +493,7 @@ export default function Report({ user, initialEmployee, records, onBack }) {
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={onBack}
+            onPress={handleBack}
             activeOpacity={0.7}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
@@ -495,13 +504,13 @@ export default function Report({ user, initialEmployee, records, onBack }) {
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* Manager Employee Selector */}
-        {isManager && (
+        {/* HR Employee Selector */}
+        {isHR && (
           <View style={styles.employeeSelectorCard}>
             <View style={styles.employeeSelectorHeader}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Ionicons name="people" size={16} color={THEME.colors.primary} />
-                <Text style={styles.employeeSelectorTitle}>Team Members</Text>
+                <Text style={styles.employeeSelectorTitle}>HR Team Inspection</Text>
               </View>
               <Text style={styles.employeeSelectorCount}>{teamList.length} Employees</Text>
             </View>
@@ -545,9 +554,17 @@ export default function Report({ user, initialEmployee, records, onBack }) {
                     {activeEmployee?.name ? activeEmployee.name.charAt(0).toUpperCase() : 'E'}
                   </Text>
                 </View>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.inspectedEmployeeName}>{activeEmployee?.name}</Text>
                   <Text style={styles.inspectedEmployeeRole}>{activeEmployee?.empId || '--'} • Team Member</Text>
+                  {activeEmployee?.project && (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: activeEmployee.project.color || '#EA580C' }} />
+                      <Text style={{ fontSize: 11, fontWeight: '700', color: THEME.colors.textSecondary }}>
+                        {activeEmployee.project.name}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
               <View style={styles.inspectedStatsPill}>
@@ -663,7 +680,7 @@ export default function Report({ user, initialEmployee, records, onBack }) {
                 <Ionicons name="calendar" size={16} color={THEME.colors.primary} />
               </View>
               <View>
-                <Text style={styles.heatmapTitle}>Monthly Attendance Heatmap</Text>
+                <Text style={styles.heatmapTitle}>Monthly Attendance</Text>
                 <Text style={styles.heatmapSubtitle}>
                   {monthNames[hmMonth]} {hmYear}
                 </Text>

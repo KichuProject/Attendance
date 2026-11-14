@@ -75,7 +75,7 @@ export default function Login({ onLogin, onSignUp }) {
         if (onLogin) {
           onLogin({
             ...res.user,
-            role: res.user.role || (res.user.username?.toLowerCase() === 'manager' ? 'manager' : 'employee'),
+            role: (res.user.role === 'hr' || res.user.role === 'manager' || res.user.username?.toLowerCase() === 'hr' || res.user.username?.toLowerCase() === 'manager') ? 'hr' : 'employee',
             token: res.token,
           });
         } else {

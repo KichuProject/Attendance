@@ -80,15 +80,22 @@ async function initializeDatabase() {
       // Ignore if already exists
     }
 
-    // 4. Seed or update Manager account
-    const [managerRows] = await pool.query("SELECT id FROM users WHERE username = 'manager'");
-    if (managerRows.length === 0) {
-      const hashedPassword = await bcrypt.hash('manager123', 10);
+    // Migrate any legacy 'manager' role to 'hr'
+    try {
+      await pool.query("UPDATE users SET role = 'hr' WHERE role = 'manager'");
+    } catch (e) {
+      // Ignore
+    }
+
+    // 4. Seed or update HR account
+    const [hrRows] = await pool.query("SELECT id FROM users WHERE username = 'hr' OR role = 'hr'");
+    if (hrRows.length === 0) {
+      const hashedPassword = await bcrypt.hash('hr123', 10);
       await pool.query(
         "INSERT INTO users (username, password, emp_id, name, role) VALUES (?, ?, ?, ?, ?)",
-        ['manager', hashedPassword, 'MGR-001', 'Manager', 'manager']
+        ['hr', hashedPassword, 'HR-001', 'HR Admin', 'hr']
       );
-      console.log(" Seeded manager account ('manager' / 'manager123') in MySQL.");
+      console.log(" Seeded HR account ('hr' / 'hr123') in MySQL.");
     }
 
     // 5. Create Attendance table
@@ -135,6 +142,48 @@ async function initializeDatabase() {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
       );
     `);
+
+    // 7. Create Projects table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(150) NOT NULL,
+        code VARCHAR(50) UNIQUE NOT NULL,
+        client VARCHAR(150) DEFAULT 'Tech Sigaram',
+        description TEXT DEFAULT NULL,
+        color VARCHAR(20) DEFAULT '#EA580C',
+        status ENUM('active', 'completed', 'on_hold') DEFAULT 'active',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      );
+    `);
+
+    // 8. Create Employee Projects mapping table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS employee_projects (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        project_id INT NOT NULL,
+        role_in_project VARCHAR(100) DEFAULT 'Member',
+        assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_project (user_id, project_id),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+      );
+    `);
+
+    // 9. Seed default projects if table is empty
+    const [projectCount] = await pool.query('SELECT COUNT(*) as count FROM projects');
+    if ((projectCount[0]?.count || 0) === 0) {
+      await pool.query(`
+        INSERT INTO projects (name, code, client, description, color, status) VALUES
+        ('AI Attendance Suite', 'PRJ-ATTEND', 'Tech Sigaram Internal', 'Biometric & geofenced workforce management platform', '#EA580C', 'active'),
+        ('FinTech Mobile Banking', 'PRJ-FINTECH', 'Apex Financial Corp', 'Next-gen retail banking app with instant settlement', '#3B82F6', 'active'),
+        ('Supply Chain Logistics', 'PRJ-LOGIX', 'Global Cargo Ltd', 'Real-time telemetry and freight tracking portal', '#10B981', 'active'),
+        ('Cloud HR Portal', 'PRJ-CLOUDHR', 'Enterprise Corp', 'Centralized employee self-service and payroll suite', '#8B5CF6', 'active')
+      `);
+      console.log(' Seeded 4 default company projects in MySQL.');
+    }
 
     console.log(` MySQL Connected & Database '${dbConfig.database}' initialized successfully.`);
   } catch (error) {
