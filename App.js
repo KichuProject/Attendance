@@ -10,6 +10,12 @@ import Login from './screen/Login';
 import Register from './screen/Register';
 import Home from './screen/Home';
 import Report from './screen/Report';
+import Settings from './screen/Settings';
+import Leave from './screen/Leave';
+import Team from './screen/Team';
+import Approvals from './screen/Approvals';
+import Export from './screen/Export';
+import { registerForPushNotificationsAsync } from './services/notificationService';
 import { storage, ONE_HOUR_MS } from './services/storage';
 
 export const navigationRef = createNavigationContainerRef();
@@ -75,10 +81,69 @@ function AppStackScreen({
                 initialEmployee: targetEmp || null,
               });
             }}
+            onNavigateSettings={() => {
+              props.navigation.navigate('Settings');
+            }}
+            onNavigateTeam={() => {
+              props.navigation.navigate('Team');
+            }}
+            onNavigateLeave={() => {
+              props.navigation.navigate('Leave');
+            }}
+            onNavigateApprovals={() => {
+              props.navigation.navigate('Approvals');
+            }}
             records={attendanceRecords}
             setRecords={setAttendanceRecords}
             leaveRequests={leaveRequests}
             addLeaveRequest={addLeaveRequest}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Leave">
+        {(props) => (
+          <Leave
+            {...props}
+            user={userData}
+            leaveRequests={leaveRequests}
+            addLeaveRequest={addLeaveRequest}
+            onBack={() => props.navigation.goBack()}
+            onNavigateHome={() => props.navigation.navigate('Home')}
+            onNavigateTeam={() => props.navigation.navigate('Team')}
+            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
+            onNavigateSettings={() => props.navigation.navigate('Settings')}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Team">
+        {(props) => (
+          <Team
+            {...props}
+            user={userData}
+            onNavigateReport={(targetEmp) => {
+              props.navigation.navigate('Report', {
+                initialEmployee: targetEmp || null,
+              });
+            }}
+            onBack={() => props.navigation.goBack()}
+            onNavigateHome={() => props.navigation.navigate('Home')}
+            onNavigateLeave={() => props.navigation.navigate('Leave')}
+            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
+            onNavigateSettings={() => props.navigation.navigate('Settings')}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Approvals">
+        {(props) => (
+          <Approvals
+            {...props}
+            user={userData}
+            leaveRequests={leaveRequests}
+            onBack={() => props.navigation.goBack()}
+            onNavigateHome={() => props.navigation.navigate('Home')}
+            onNavigateTeam={() => props.navigation.navigate('Team')}
+            onNavigateLeave={() => props.navigation.navigate('Leave')}
+            onNavigateSettings={() => props.navigation.navigate('Settings')}
           />
         )}
       </AppStack.Screen>
@@ -90,6 +155,35 @@ function AppStackScreen({
             initialEmployee={props.route.params?.initialEmployee || null}
             records={attendanceRecords}
             onBack={() => props.navigation.goBack()}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Settings">
+        {(props) => (
+          <Settings
+            {...props}
+            user={userData}
+            onLogout={onLogout}
+            onBack={() => props.navigation.goBack()}
+            onNavigateHome={() => props.navigation.navigate('Home')}
+            onNavigateTeam={() => props.navigation.navigate('Team')}
+            onNavigateLeave={() => props.navigation.navigate('Leave')}
+            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
+            onNavigateExport={() => props.navigation.navigate('Export')}
+          />
+        )}
+      </AppStack.Screen>
+      <AppStack.Screen name="Export">
+        {(props) => (
+          <Export
+            {...props}
+            user={userData}
+            onBack={() => props.navigation.goBack()}
+            onNavigateHome={() => props.navigation.navigate('Home')}
+            onNavigateTeam={() => props.navigation.navigate('Team')}
+            onNavigateLeave={() => props.navigation.navigate('Leave')}
+            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
+            onNavigateSettings={() => props.navigation.navigate('Settings')}
           />
         )}
       </AppStack.Screen>
@@ -165,6 +259,13 @@ export default function App() {
       }
     };
   }, [scheduleSessionExpiryTimer]);
+
+  // Register device for push notifications on login / session restore
+  useEffect(() => {
+    if (userData?.id) {
+      registerForPushNotificationsAsync(userData.id);
+    }
+  }, [userData?.id]);
 
   const addLeaveRequest = (req) => {
     setLeaveRequests((prev) => [

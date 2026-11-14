@@ -9,12 +9,39 @@ export default function HomeTabSwitcher({
   setActiveTab,
   isHR,
   pendingLeavesCount = 0,
+  onOpenSettings,
+  onNavigateHome,
+  onNavigateTeam,
+  onNavigateLeave,
+  onNavigateApprovals,
 }) {
   const handleTabPress = (tab) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (_e) {}
-    setActiveTab(tab);
+    } catch (_e) { }
+
+    if (tab === 'attendance' && onNavigateHome) {
+      onNavigateHome();
+      return;
+    }
+    if (tab === 'team' && onNavigateTeam) {
+      onNavigateTeam();
+      return;
+    }
+    if (tab === 'leave') {
+      if (isHR && onNavigateApprovals) {
+        onNavigateApprovals();
+        return;
+      }
+      if (!isHR && onNavigateLeave) {
+        onNavigateLeave();
+        return;
+      }
+    }
+
+    if (setActiveTab) {
+      setActiveTab(tab);
+    }
   };
 
   return (
@@ -31,7 +58,7 @@ export default function HomeTabSwitcher({
         >
           <Ionicons
             name={activeTab === 'attendance' ? 'time' : 'time-outline'}
-            size={16}
+            size={15}
             color={activeTab === 'attendance' ? '#FFFFFF' : '#94A3B8'}
           />
           <Text
@@ -58,7 +85,7 @@ export default function HomeTabSwitcher({
           >
             <Ionicons
               name={activeTab === 'team' ? 'briefcase' : 'briefcase-outline'}
-              size={16}
+              size={15}
               color={activeTab === 'team' ? '#FFFFFF' : '#94A3B8'}
             />
             <Text
@@ -69,7 +96,7 @@ export default function HomeTabSwitcher({
               numberOfLines={1}
               ellipsizeMode="tail"
             >
-              Team & Projects
+              Team
             </Text>
           </TouchableOpacity>
         )}
@@ -83,10 +110,10 @@ export default function HomeTabSwitcher({
           onPress={() => handleTabPress('leave')}
           activeOpacity={0.8}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
             <Ionicons
               name={activeTab === 'leave' ? 'document-text' : 'document-text-outline'}
-              size={16}
+              size={15}
               color={activeTab === 'leave' ? '#FFFFFF' : '#94A3B8'}
             />
             <Text
@@ -105,6 +132,37 @@ export default function HomeTabSwitcher({
               </View>
             )}
           </View>
+        </TouchableOpacity>
+
+        {/* Settings Tab */}
+        <TouchableOpacity
+          style={[
+            styles.dockItem,
+            activeTab === 'settings' && styles.dockItemActive,
+          ]}
+          onPress={() => {
+            try {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            } catch (_e) { }
+            if (onOpenSettings) onOpenSettings();
+          }}
+          activeOpacity={0.8}
+        >
+          <Ionicons
+            name={activeTab === 'settings' ? 'settings' : 'settings-outline'}
+            size={15}
+            color={activeTab === 'settings' ? '#FFFFFF' : '#94A3B8'}
+          />
+          <Text
+            style={[
+              styles.dockText,
+              activeTab === 'settings' && styles.dockTextActive,
+            ]}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            Settings
+          </Text>
         </TouchableOpacity>
       </View>
     </View>

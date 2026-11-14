@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { initializeDatabase } = require('./config/db');
+const { initializeAttendanceCron, runAttendanceReminderJob } = require('./cron/attendanceReminderCron');
 const authRoutes = require('./routes/auth');
 const attendanceRoutes = require('./routes/attendance');
 const leaveRoutes = require('./routes/leave');
@@ -21,7 +22,18 @@ app.get('/api/health', (req, res) => {
     status: 'online',
     timestamp: new Date().toISOString(),
     service: 'Attendance Backend API',
+    cronSchedule: '09:45 AM Mon-Sat (15m before 10:00 AM)',
   });
+});
+
+// Manual trigger route for instant push notification testing
+app.post('/api/attendance/trigger-reminder-test', async (req, res) => {
+  try {
+    const result = await runAttendanceReminderJob(true);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // Mount Routes
@@ -39,6 +51,7 @@ app.use((err, req, res, next) => {
 // Initialize DB and Start Server
 async function startServer(port = PORT) {
   await initializeDatabase();
+  initializeAttendanceCron();
 
   return new Promise((resolve, reject) => {
     const serverInstance = app.listen(port, '0.0.0.0', () => {

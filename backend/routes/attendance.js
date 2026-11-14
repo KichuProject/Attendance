@@ -203,11 +203,70 @@ router.get('/history/:userId', async (req, res) => {
   }
 });
 
+// 4b. Get attendance history across all non-HR employees (HR)
+router.get('/history-all', async (req, res) => {
+  try {
+    const { fromDate, toDate } = req.query;
+
+    let query = `
+      SELECT a.id, DATE_FORMAT(a.date, '%Y-%m-%d') as raw_date, a.date, a.status, a.in_time, a.out_time,
+             a.latitude, a.longitude, a.out_latitude, a.out_longitude,
+             u.id as user_id, u.emp_id, u.name, u.role
+      FROM attendance a
+      JOIN users u ON a.user_id = u.id
+      WHERE u.role != 'manager' AND u.role != 'hr' AND u.username != 'hr' AND u.username != 'hrr'
+    `;
+    const params = [];
+
+    if (fromDate) {
+      query += ` AND a.date >= ?`;
+      params.push(fromDate);
+    }
+
+    if (toDate) {
+      query += ` AND a.date <= ?`;
+      params.push(toDate);
+    }
+
+    query += ` ORDER BY a.date DESC, u.name ASC`;
+
+    const [rows] = await pool.query(query, params);
+
+    const history = rows.map((r, index) => ({
+      id: String(r.id),
+      sno: index + 1,
+      userId: r.user_id,
+      empId: r.emp_id,
+      name: r.name,
+      date: formatDateString(r.date),
+      rawDate: r.raw_date,
+      status: r.status,
+      inTime: r.in_time || '--:--',
+      outTime: r.out_time || '--:--',
+      latitude: r.latitude || '--',
+      longitude: r.longitude || '--',
+      outLatitude: r.out_latitude || '--',
+      outLongitude: r.out_longitude || '--',
+    }));
+
+    res.json({
+      success: true,
+      count: history.length,
+      records: history,
+    });
+  } catch (error) {
+    console.error('All history fetch error:', error);
+    res.status(500).json({ error: 'Failed to fetch all attendance history' });
+  }
+});
+
 // 5. Get all team employees with their today attendance status & mapped project (HR)
 router.get('/team-summary', async (req, res) => {
   try {
     const [rows] = await pool.query(`
-      SELECT u.id, u.name, u.username, u.emp_id, u.role,
+      SELECT u.id, u.name, u.username, u.emp_id, u.role, u.created_at,
+             (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
+             (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave,
              a.status as today_status,
              a.in_time, a.out_time,
              a.latitude, a.longitude,
@@ -237,12 +296,26 @@ router.get('/team-summary', async (req, res) => {
         if (!finalStatus) {
           finalStatus = r.active_leave_id ? 'LEAVE' : 'NOT IN';
         }
+        let effCreated = r.created_at ? new Date(r.created_at) : new Date();
+        if (r.first_attendance) {
+          const fAtt = new Date(r.first_attendance);
+          if (!isNaN(fAtt.getTime()) && fAtt < effCreated) {
+            effCreated = fAtt;
+          }
+        }
+        if (r.first_leave) {
+          const fLv = new Date(r.first_leave);
+          if (!isNaN(fLv.getTime()) && fLv < effCreated) {
+            effCreated = fLv;
+          }
+        }
         return {
           id: r.id,
           name: r.name,
           username: r.username,
           empId: r.emp_id,
           role: r.role,
+          createdAt: effCreated.toISOString(),
           status: finalStatus,
           todayStatus: finalStatus,
           inTime: r.in_time || null,

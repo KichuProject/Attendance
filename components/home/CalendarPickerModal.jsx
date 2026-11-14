@@ -16,19 +16,22 @@ export default function CalendarPickerModal({
   calendarTarget,
   cMonth,
   cYear,
-  monthNames,
-  weekDays,
+  monthNames = [],
+  weekDays = [],
   prevMonth,
   nextMonth,
   isPrevMonthDisabled,
-  blanks,
-  monthDays,
+  blanks = [],
+  monthDays = [],
   isDaySelected,
   isDayDisabled,
   onSelectDate,
   selectToday,
   isTodayDisabled,
 }) {
+  const prevDisabled = typeof isPrevMonthDisabled === 'function' ? isPrevMonthDisabled() : !!isPrevMonthDisabled;
+  const todayDisabled = typeof isTodayDisabled === 'function' ? isTodayDisabled() : !!isTodayDisabled;
+
   return (
     <Modal
       animationType="fade"
@@ -44,9 +47,9 @@ export default function CalendarPickerModal({
               onPress={prevMonth}
               style={[
                 styles.monthNavButton,
-                isPrevMonthDisabled() && styles.monthNavButtonDisabled,
+                prevDisabled && styles.monthNavButtonDisabled,
               ]}
-              disabled={isPrevMonthDisabled()}
+              disabled={prevDisabled}
               activeOpacity={0.7}
             >
               <Ionicons name="chevron-back" size={18} color={THEME.colors.textPrimary} />
@@ -83,13 +86,13 @@ export default function CalendarPickerModal({
               <View key={`b-${b}`} style={styles.dayCell} />
             ))}
             {monthDays.map((d) => {
-              const selected = isDaySelected(d);
-              const disabled = isDayDisabled(d);
+              const selected = typeof isDaySelected === 'function' ? isDaySelected(d) : false;
+              const disabled = typeof isDayDisabled === 'function' ? isDayDisabled(d) : false;
               return (
                 <TouchableOpacity
                   key={`d-${d}`}
                   style={[styles.dayCell, disabled && styles.disabledDayCell]}
-                  onPress={() => onSelectDate(d)}
+                  onPress={() => onSelectDate && onSelectDate(d)}
                   disabled={disabled}
                   activeOpacity={0.6}
                 >
@@ -120,16 +123,16 @@ export default function CalendarPickerModal({
             <TouchableOpacity
               style={[
                 styles.calendarTodayBtn,
-                isTodayDisabled() && styles.calendarTodayBtnDisabled,
+                todayDisabled && styles.calendarTodayBtnDisabled,
               ]}
               onPress={selectToday}
-              disabled={isTodayDisabled()}
+              disabled={todayDisabled}
               activeOpacity={0.7}
             >
               <Text
                 style={[
                   styles.calendarTodayText,
-                  isTodayDisabled() && styles.calendarTodayTextDisabled,
+                  todayDisabled && styles.calendarTodayTextDisabled,
                 ]}
               >
                 Today

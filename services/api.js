@@ -1,6 +1,6 @@
 // API Service for connecting Expo frontend to deployed Node.js backend on Render
-// export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
- export const API_BASE_URL = 'http://192.168.1.8:5001/api';
+export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
+//  export const API_BASE_URL = 'http://192.168.1.8:5001/api';
 
 
 export const api = {
@@ -45,6 +45,44 @@ export const api = {
       return await res.json();
     } catch (error) {
       console.error('API verifyToken error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  getUserProfile: async (userId) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/profile/${userId}`);
+      return await res.json();
+    } catch (error) {
+      console.error('API getUserProfile error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  changePassword: async (userId, currentPassword, newPassword) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/change-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, currentPassword, newPassword }),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API changePassword error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  savePushToken: async (userId, pushToken) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/push-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, pushToken }),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API savePushToken error:', error);
       return { success: false, error: 'Network error: could not connect to server' };
     }
   },
@@ -104,6 +142,26 @@ export const api = {
     } catch (error) {
       console.error('API getHistory error:', error);
       return { success: false, records: [], error: 'Network error: could not connect to server' };
+    }
+  },
+
+  // Attendance History across all employees (HR Export)
+  getAllHistory: async (fromDate, toDate) => {
+    try {
+      let url = `${API_BASE_URL}/attendance/history-all`;
+      const params = new URLSearchParams();
+      if (fromDate) params.append('fromDate', fromDate);
+      if (toDate) params.append('toDate', toDate);
+      if (params.toString()) url += `?${params.toString()}`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        return await res.json();
+      }
+      return { success: false, records: [] };
+    } catch (error) {
+      console.error('API getAllHistory error:', error);
+      return { success: false, records: [] };
     }
   },
 

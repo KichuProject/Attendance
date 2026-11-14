@@ -11,6 +11,7 @@
     },
     "android": {
       "package": "com.techsigaram.attendance",
+      "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
@@ -27,7 +28,21 @@
     },
     "plugins": [
       "expo-font",
-      "expo-status-bar"
-    ]
+      "expo-status-bar",
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/logo.png",
+          "color": "#EA580C"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "a0ed6f4d-fc71-43c2-9c2a-081417e45a4d"
+      }
+    },
+    "owner": "kishorekichu"
   }
 }

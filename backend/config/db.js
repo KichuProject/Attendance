@@ -73,12 +73,30 @@ async function initializeDatabase() {
       );
     `);
 
-    // 3. Ensure role column exists if table was created previously without it
+    // 3. Ensure role & push_token columns exist if table was created previously without them
     try {
       await pool.query("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'employee'");
     } catch (e) {
       // Ignore if already exists
     }
+    try {
+      await pool.query("ALTER TABLE users ADD COLUMN push_token VARCHAR(255) DEFAULT NULL");
+    } catch (e) {
+      // Ignore if already exists
+    }
+
+    // Ensure checkin_reminders tracking table exists
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS checkin_reminders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        reminder_date DATE NOT NULL,
+        office_start_time VARCHAR(20) DEFAULT '10:00 AM',
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_reminder_date (user_id, reminder_date),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
 
     // Migrate any legacy 'manager' role to 'hr'
     try {

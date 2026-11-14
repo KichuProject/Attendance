@@ -201,6 +201,10 @@ export default function Home({
   user,
   onLogout,
   onNavigateReport,
+  onNavigateSettings,
+  onNavigateTeam,
+  onNavigateLeave,
+  onNavigateApprovals,
   setRecords,
   leaveRequests = [],
   addLeaveRequest,
@@ -581,10 +585,16 @@ export default function Home({
         const toDateObj = parseDate(leaveTo);
         const newFromObj = new Date(y, viewDate.getMonth(), dayNumber, 0, 0, 0, 0);
         if (toDateObj && toDateObj < newFromObj) {
-          setLeaveTo('');
+          setLeaveTo(formatted);
         }
       }
     } else {
+      const fromD = parseDate(leaveFrom);
+      const selectedD = new Date(y, viewDate.getMonth(), dayNumber, 0, 0, 0, 0);
+      if (fromD && selectedD < fromD) {
+        Alert.alert('Invalid Date Range', 'To Date cannot be earlier than From Date.');
+        return;
+      }
       setLeaveTo(formatted);
     }
     setCalendarVisible(false);
@@ -613,10 +623,16 @@ export default function Home({
         const toDateObj = parseDate(leaveTo);
         const todayObj = getTodayMidnight();
         if (toDateObj && toDateObj < todayObj) {
-          setLeaveTo('');
+          setLeaveTo(formatted);
         }
       }
     } else {
+      const fromD = parseDate(leaveFrom);
+      const todayObj = getTodayMidnight();
+      if (fromD && todayObj < fromD) {
+        Alert.alert('Invalid Date Range', 'To Date cannot be earlier than From Date.');
+        return;
+      }
       setLeaveTo(formatted);
     }
     setCalendarVisible(false);
@@ -811,7 +827,7 @@ export default function Home({
   const handleOpenProjectMapping = (emp) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (_e) {}
+    } catch (_e) { }
     setSelectedEmpForMapping(emp);
     setSelectedProjectId(emp.project?.id || (projectsList.length > 0 ? projectsList[0].id : null));
     setSelectedProjectRole(emp.project?.roleInProject || 'Member');
@@ -833,7 +849,7 @@ export default function Home({
       if (res.success) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (_e) {}
+        } catch (_e) { }
 
         const mappedProject = projectsList.find((p) => p.id === selectedProjectId) || {
           id: selectedProjectId,
@@ -847,12 +863,12 @@ export default function Home({
           prev.map((emp) =>
             emp.id === selectedEmpForMapping.id
               ? {
-                  ...emp,
-                  project: {
-                    ...mappedProject,
-                    roleInProject: finalRole,
-                  },
-                }
+                ...emp,
+                project: {
+                  ...mappedProject,
+                  roleInProject: finalRole,
+                },
+              }
               : emp
           )
         );
@@ -888,7 +904,7 @@ export default function Home({
       if (res.success) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        } catch (_e) {}
+        } catch (_e) { }
 
         setTeamSummary((prev) =>
           prev.map((emp) =>
@@ -934,7 +950,7 @@ export default function Home({
       if (res.success && res.project) {
         try {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        } catch (_e) {}
+        } catch (_e) { }
 
         setProjectsList((prev) => [res.project, ...prev]);
         setCreateProjectModalVisible(false);
@@ -1198,12 +1214,12 @@ export default function Home({
         prev.map((item, idx) =>
           idx === 0
             ? {
-                ...item,
-                status: 'OUT',
-                outTime: currentTime,
-                outLatitude: outLatStr,
-                outLongitude: outLonStr,
-              }
+              ...item,
+              status: 'OUT',
+              outTime: currentTime,
+              outLatitude: outLatStr,
+              outLongitude: outLonStr,
+            }
             : item
         )
       );
@@ -1312,7 +1328,7 @@ export default function Home({
               activeOpacity={0.75}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
-              <Ionicons name="log-out-outline" size={16} color={THEME.colors.danger} style={styles.logoutIcon} />
+              <Ionicons name="log-out-outline" size={15} color={THEME.colors.danger} style={styles.logoutIcon} />
               <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
           )}
@@ -1426,6 +1442,11 @@ export default function Home({
         setActiveTab={setActiveTab}
         isHR={isHR}
         pendingLeavesCount={isHR ? (dbLeaveRequests || []).filter((r) => r.status === 'Pending').length : 0}
+        onOpenSettings={onNavigateSettings}
+        onNavigateHome={() => setActiveTab('attendance')}
+        onNavigateTeam={onNavigateTeam}
+        onNavigateLeave={onNavigateLeave}
+        onNavigateApprovals={onNavigateApprovals}
       />
 
       {/* ── MODALS ── */}
@@ -1560,6 +1581,22 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.colors.dangerSurface,
     borderWidth: 1,
     borderColor: THEME.colors.dangerBorder,
+  },
+  settingsHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+    borderRadius: THEME.radii.sm,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 4,
+  },
+  settingsHeaderText: {
+    color: THEME.colors.slateHero,
+    fontSize: 12,
+    fontWeight: '700',
   },
   logoutIcon: {
     marginRight: 4,
