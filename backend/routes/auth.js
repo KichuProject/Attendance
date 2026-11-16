@@ -170,23 +170,23 @@ router.get('/profile/:userId', async (req, res) => {
     const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
     const [rows] = isNum
       ? await pool.query(
-          `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
+        `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
                   (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
                   (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave
            FROM users u
            WHERE u.id = ? OR u.emp_id = ? OR u.username = ?
            LIMIT 1`,
-          [Number(userId), String(userId), String(userId)]
-        )
+        [Number(userId), String(userId), String(userId)]
+      )
       : await pool.query(
-          `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
+        `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
                   (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
                   (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave
            FROM users u
            WHERE u.emp_id = ? OR u.username = ?
            LIMIT 1`,
-          [String(userId), String(userId)]
-        );
+        [String(userId), String(userId)]
+      );
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -249,13 +249,13 @@ router.post('/change-password', async (req, res) => {
     const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
     const [rows] = isNum
       ? await pool.query(
-          'SELECT id, username, password FROM users WHERE id = ? OR username = ? LIMIT 1',
-          [Number(userId), String(userId)]
-        )
+        'SELECT id, username, password FROM users WHERE id = ? OR username = ? LIMIT 1',
+        [Number(userId), String(userId)]
+      )
       : await pool.query(
-          'SELECT id, username, password FROM users WHERE username = ? LIMIT 1',
-          [String(userId)]
-        );
+        'SELECT id, username, password FROM users WHERE username = ? LIMIT 1',
+        [String(userId)]
+      );
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'User account not found' });
