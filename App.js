@@ -15,8 +15,11 @@ import Leave from './screen/Leave';
 import Team from './screen/Team';
 import Approvals from './screen/Approvals';
 import Export from './screen/Export';
-import { registerForPushNotificationsAsync } from './services/notificationService';
-import { storage, ONE_HOUR_MS } from './services/storage';
+import {
+  registerForPushNotificationsAsync,
+  setupNotificationResponseHandler,
+} from './services/notificationService';
+import { storage, TWENTY_FOUR_HOURS_MS } from './services/storage';
 
 export const navigationRef = createNavigationContainerRef();
 
@@ -211,7 +214,7 @@ export default function App() {
     setAttendanceRecords([]);
     Alert.alert(
       'Session Expired',
-      'Your 1-hour session has expired. Please log in again to continue.'
+      'Your 24-hour session has expired. Please log in again to continue.'
     );
   }, []);
 
@@ -263,9 +266,21 @@ export default function App() {
   // Register device for push notifications on login / session restore
   useEffect(() => {
     if (userData?.id) {
-      registerForPushNotificationsAsync(userData.id);
+      registerForPushNotificationsAsync(userData.id).catch((err) => {
+        console.warn('[Push Notification] Registration failed:', err?.message || err);
+      });
     }
   }, [userData?.id]);
+
+  // Handle notification interaction (e.g. user tapped "Punch In Now" button)
+  useEffect(() => {
+    const cleanup = setupNotificationResponseHandler(() => {
+      if (navigationRef.isReady()) {
+        navigationRef.navigate('Home');
+      }
+    });
+    return cleanup;
+  }, []);
 
   const addLeaveRequest = (req) => {
     setLeaveRequests((prev) => [
@@ -277,17 +292,17 @@ export default function App() {
   const handleLogin = async (data) => {
     setUserData(data);
     if (data?.token) {
-      // Store session in AsyncStorage for 1 hour
-      await storage.saveAuthSession(data.token, data, ONE_HOUR_MS);
-      scheduleSessionExpiryTimer(ONE_HOUR_MS);
+      // Store session in AsyncStorage for 24 hours
+      await storage.saveAuthSession(data.token, data, TWENTY_FOUR_HOURS_MS);
+      scheduleSessionExpiryTimer(TWENTY_FOUR_HOURS_MS);
     }
   };
 
   const handleRegister = async (data) => {
     setUserData(data);
     if (data?.token) {
-      await storage.saveAuthSession(data.token, data, ONE_HOUR_MS);
-      scheduleSessionExpiryTimer(ONE_HOUR_MS);
+      await storage.saveAuthSession(data.token, data, TWENTY_FOUR_HOURS_MS);
+      scheduleSessionExpiryTimer(TWENTY_FOUR_HOURS_MS);
     }
   };
 

@@ -52,13 +52,13 @@ router.post('/register', async (req, res) => {
       createdAt,
     };
 
-    const token = jwt.sign(newUser, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(newUser, JWT_SECRET, { expiresIn: '24h' });
 
     res.status(201).json({
       success: true,
       message: `${userRole === 'hr' ? 'HR' : 'Employee'} registered successfully`,
       token,
-      expiresIn: 3600,
+      expiresIn: 86400,
       user: newUser,
     });
   } catch (error) {
@@ -128,13 +128,13 @@ router.post('/login', async (req, res) => {
       createdAt: user.created_at || null,
     };
 
-    const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '1h' });
+    const token = jwt.sign(userData, JWT_SECRET, { expiresIn: '24h' });
 
     res.json({
       success: true,
       message: 'Login successful',
       token,
-      expiresIn: 3600,
+      expiresIn: 86400,
       user: userData,
     });
   } catch (error) {
@@ -156,7 +156,7 @@ router.get('/verify', (req, res) => {
     if (err) {
       return res.status(401).json({
         success: false,
-        error: err.name === 'TokenExpiredError' ? 'Session expired (1 hour limit reached)' : 'Invalid token',
+        error: err.name === 'TokenExpiredError' ? 'Session expired (24 hour limit reached)' : 'Invalid token',
       });
     }
     res.json({ success: true, user: decoded });
@@ -167,15 +167,26 @@ router.get('/verify', (req, res) => {
 router.get('/profile/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const [rows] = await pool.query(
-      `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
-              (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
-              (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave
-       FROM users u
-       WHERE u.id = ? OR u.emp_id = ? OR u.username = ?
-       LIMIT 1`,
-      [userId, userId, userId]
-    );
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+    const [rows] = isNum
+      ? await pool.query(
+          `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
+                  (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
+                  (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave
+           FROM users u
+           WHERE u.id = ? OR u.emp_id = ? OR u.username = ?
+           LIMIT 1`,
+          [Number(userId), String(userId), String(userId)]
+        )
+      : await pool.query(
+          `SELECT u.id, u.username, u.emp_id, u.name, u.role, u.created_at,
+                  (SELECT MIN(date) FROM attendance WHERE user_id = u.id) as first_attendance,
+                  (SELECT MIN(from_date) FROM leave_requests WHERE user_id = u.id) as first_leave
+           FROM users u
+           WHERE u.emp_id = ? OR u.username = ?
+           LIMIT 1`,
+          [String(userId), String(userId)]
+        );
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -235,10 +246,16 @@ router.post('/change-password', async (req, res) => {
       });
     }
 
-    const [rows] = await pool.query(
-      'SELECT id, username, password FROM users WHERE id = ? OR username = ? LIMIT 1',
-      [userId, userId]
-    );
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+    const [rows] = isNum
+      ? await pool.query(
+          'SELECT id, username, password FROM users WHERE id = ? OR username = ? LIMIT 1',
+          [Number(userId), String(userId)]
+        )
+      : await pool.query(
+          'SELECT id, username, password FROM users WHERE username = ? LIMIT 1',
+          [String(userId)]
+        );
 
     if (rows.length === 0) {
       return res.status(404).json({ success: false, error: 'User account not found' });
@@ -274,10 +291,18 @@ router.post('/push-token', async (req, res) => {
       return res.status(400).json({ success: false, error: 'userId and pushToken are required' });
     }
 
-    await pool.query(
-      'UPDATE users SET push_token = ? WHERE id = ? OR username = ? OR emp_id = ?',
-      [pushToken, userId, userId, userId]
-    );
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+    if (isNum) {
+      await pool.query(
+        'UPDATE users SET push_token = ? WHERE id = ? OR username = ? OR emp_id = ?',
+        [pushToken, Number(userId), String(userId), String(userId)]
+      );
+    } else {
+      await pool.query(
+        'UPDATE users SET push_token = ? WHERE username = ? OR emp_id = ?',
+        [pushToken, String(userId), String(userId)]
+      );
+    }
 
     console.log(`[Push Token Registered] User: ${userId} | Expo Push Token: ${pushToken}`);
 

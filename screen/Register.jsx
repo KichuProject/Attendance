@@ -250,8 +250,8 @@ export default function Register({ onRegister, onNavigateLogin, navigation }) {
                       errors.name
                         ? THEME.colors.danger
                         : focusedInput === 'name'
-                        ? THEME.colors.primary
-                        : THEME.colors.textSecondary
+                          ? THEME.colors.primary
+                          : THEME.colors.textSecondary
                     }
                   />
                 </View>
@@ -300,8 +300,8 @@ export default function Register({ onRegister, onNavigateLogin, navigation }) {
                       errors.username
                         ? THEME.colors.danger
                         : focusedInput === 'username'
-                        ? THEME.colors.primary
-                        : THEME.colors.textSecondary
+                          ? THEME.colors.primary
+                          : THEME.colors.textSecondary
                     }
                   />
                 </View>
@@ -351,8 +351,8 @@ export default function Register({ onRegister, onNavigateLogin, navigation }) {
                       errors.password
                         ? THEME.colors.danger
                         : focusedInput === 'password'
-                        ? THEME.colors.primary
-                        : THEME.colors.textSecondary
+                          ? THEME.colors.primary
+                          : THEME.colors.textSecondary
                     }
                   />
                 </View>
@@ -414,8 +414,8 @@ export default function Register({ onRegister, onNavigateLogin, navigation }) {
                       errors.confirmPassword
                         ? THEME.colors.danger
                         : focusedInput === 'confirmPassword'
-                        ? THEME.colors.primary
-                        : THEME.colors.textSecondary
+                          ? THEME.colors.primary
+                          : THEME.colors.textSecondary
                     }
                   />
                 </View>

@@ -4,7 +4,11 @@ const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { initializeDatabase } = require('./config/db');
-const { initializeAttendanceCron, runAttendanceReminderJob } = require('./cron/attendanceReminderCron');
+const {
+  initializeAttendanceCron,
+  runAttendanceReminderJob,
+  runLateAttendanceReminderJob,
+} = require('./cron/attendanceReminderCron');
 const authRoutes = require('./routes/auth');
 const attendanceRoutes = require('./routes/attendance');
 const leaveRoutes = require('./routes/leave');
@@ -22,14 +26,26 @@ app.get('/api/health', (req, res) => {
     status: 'online',
     timestamp: new Date().toISOString(),
     service: 'Attendance Backend API',
-    cronSchedule: '09:45 AM Mon-Sat (15m before 10:00 AM)',
+    cronSchedules: [
+      '09:45 AM Mon-Sat (15m advance reminder)',
+      '10:05 AM Mon-Sat (Late punch-in alert if not punched in)',
+    ],
   });
 });
 
-// Manual trigger route for instant push notification testing
+// Manual trigger routes for instant push notification testing
 app.post('/api/attendance/trigger-reminder-test', async (req, res) => {
   try {
     const result = await runAttendanceReminderJob(true);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/attendance/trigger-late-reminder-test', async (req, res) => {
+  try {
+    const result = await runLateAttendanceReminderJob(true);
     res.json(result);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });

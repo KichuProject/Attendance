@@ -98,6 +98,18 @@ async function initializeDatabase() {
       );
     `);
 
+    // Ensure late_checkin_reminders tracking table exists (for after 10:00 AM alert)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS late_checkin_reminders (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        reminder_date DATE NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_late_user_date (user_id, reminder_date),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+
     // Migrate any legacy 'manager' role to 'hr'
     try {
       await pool.query("UPDATE users SET role = 'hr' WHERE role = 'manager'");

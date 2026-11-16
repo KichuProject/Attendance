@@ -4,7 +4,7 @@
     "slug": "Attendance",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo.png",
+    "icon": "./assets/app_icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true
@@ -17,8 +17,8 @@
         "ACCESS_FINE_LOCATION"
       ],
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/logo.png",
+        "backgroundColor": "#0F172A",
+        "foregroundImage": "./assets/app_icon.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       }

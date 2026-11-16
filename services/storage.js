@@ -1,19 +1,20 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AUTH_SESSION_KEY = '@attendance_auth_session';
-export const ONE_HOUR_MS = 60 * 60 * 1000; // 1 hour = 3,600,000 ms
+export const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000; // 24 hours = 86,400,000 ms
+export const ONE_HOUR_MS = TWENTY_FOUR_HOURS_MS; // Backwards compatibility alias
 
 /**
- * Storage service for managing auth tokens and sessions with 1-hour expiration
+ * Storage service for managing auth tokens and sessions with 24-hour expiration
  */
 export const storage = {
   /**
-   * Save auth token and user data with 1-hour expiration
+   * Save auth token and user data with 24-hour expiration
    * @param {string} token - JWT authentication token
    * @param {object} user - User information object
-   * @param {number} durationMs - Session validity in milliseconds (default: 1 hour)
+   * @param {number} durationMs - Session validity in milliseconds (default: 24 hours)
    */
-  saveAuthSession: async (token, user, durationMs = ONE_HOUR_MS) => {
+  saveAuthSession: async (token, user, durationMs = TWENTY_FOUR_HOURS_MS) => {
     try {
       const now = Date.now();
       const expiresAt = now + durationMs;
@@ -32,7 +33,7 @@ export const storage = {
   },
 
   /**
-   * Retrieve active auth session if within the 1-hour window
+   * Retrieve active auth session if within the 24-hour window
    * Automatically clears and returns null if expired
    * @returns {Promise<{token: string, user: object, expiresAt: number} | null>}
    */
@@ -44,9 +45,9 @@ export const storage = {
       const session = JSON.parse(raw);
       const now = Date.now();
 
-      // Check if session has expired (> 1 hour)
+      // Check if session has expired (> 24 hours)
       if (!session.expiresAt || now >= session.expiresAt) {
-        console.log('Auth session expired (1 hour limit reached). Clearing storage.');
+        console.log('Auth session expired (24 hour limit reached). Clearing storage.');
         await AsyncStorage.removeItem(AUTH_SESSION_KEY);
         return null;
       }
