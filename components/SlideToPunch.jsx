@@ -127,8 +127,19 @@ export default function SlideToPunch({
             bounciness: 2,
             speed: 20,
             useNativeDriver: false,
-          }).start(() => {
-            if (onConfirm) onConfirm();
+          }).start(async () => {
+            try {
+              if (onConfirm) await onConfirm();
+            } finally {
+              // Reset knob smoothly if check-in/out didn't transition mode (e.g. denied permission or cancelled face scan)
+              setIsSubmitting(false);
+              Animated.spring(translateX, {
+                toValue: 0,
+                bounciness: 4,
+                speed: 18,
+                useNativeDriver: false,
+              }).start();
+            }
           });
         } else {
           try {

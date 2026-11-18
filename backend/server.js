@@ -4,6 +4,7 @@ const cors = require('cors');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 
 const { initializeDatabase } = require('./config/db');
+const { initFaceAiEngine } = require('./utils/faceAiEngine');
 const {
   initializeAttendanceCron,
   runAttendanceReminderJob,
@@ -18,8 +19,9 @@ const app = express();
 const PORT = process.env.PORT || 5001;
 
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// Raise body limit to 15MB to safely handle mobile camera JPEG base64 payloads
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -60,13 +62,22 @@ app.use('/api/projects', projectRoutes);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
-  console.error('Unhandled Server Error:', err.stack);
-  res.status(500).json({ error: 'Internal Server Error' });
+  if (err && (err.type === 'entity.too.large' || err.status === 413)) {
+    return res.status(413).json({
+      success: false,
+      error: 'Captured image is too large. Please try again.',
+    });
+  }
+  console.error('Unhandled Server Error:', err.stack || err);
+  res.status(500).json({ success: false, error: 'Internal Server Error' });
 });
 
-// Initialize DB and Start Server
+// Initialize DB, pre-load Face AI neural networks, and Start Server
 async function startServer(port = PORT) {
   await initializeDatabase();
+  initFaceAiEngine().catch((err) => {
+    console.error('[FaceAI] Failed to pre-load models on startup:', err.message);
+  });
   initializeAttendanceCron();
 
   return new Promise((resolve, reject) => {

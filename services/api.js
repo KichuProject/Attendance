@@ -1,6 +1,6 @@
 // API Service for connecting Expo frontend to deployed Node.js backend on Render
-export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
-//  export const API_BASE_URL = 'http://192.168.1.8:5001/api';
+// export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
+ export const API_BASE_URL = 'http://192.168.1.8:5001/api';
 
 
 export const api = {
@@ -98,15 +98,60 @@ export const api = {
     }
   },
 
-  // Punch IN with Lat & Lon
-  checkIn: async (userId, inTime, latitude, longitude) => {
+  // Face Biometric Registration & Status
+  getFaceStatus: async (userId) => {
     try {
+      const res = await fetch(`${API_BASE_URL}/auth/face-status/${userId}`);
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (_parseErr) {
+        console.warn('API getFaceStatus returned non-JSON response (server restart needed):', text.slice(0, 80));
+        return { success: false, isFaceRegistered: false, error: 'Server route not loaded' };
+      }
+    } catch (error) {
+      console.error('API getFaceStatus error:', error);
+      return { success: false, isFaceRegistered: false, error: 'Network error checking face status' };
+    }
+  },
+
+  registerFace: async (userId, imageBase64) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/register-face`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, imageBase64 }),
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch (_parseErr) {
+        return { success: false, error: 'Server returned invalid response: ' + text.slice(0, 80) };
+      }
+    } catch (error) {
+      console.error('API registerFace error:', error);
+      return { success: false, error: 'Network error registering face' };
+    }
+  },
+
+  // Punch IN with Lat & Lon and mandatory live face verification photo (base64 JPEG)
+  checkIn: async (userId, inTime, latitude, longitude, imageBase64 = null) => {
+    try {
+      const payload = { userId, inTime, latitude, longitude };
+      if (imageBase64 && typeof imageBase64 === 'string') {
+        payload.imageBase64 = imageBase64;
+      }
       const res = await fetch(`${API_BASE_URL}/attendance/check-in`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, inTime, latitude, longitude }),
+        body: JSON.stringify(payload),
       });
-      return await res.json();
+      const text = await res.text();
+      try {
+        return JSON.parse(text);
+      } catch {
+        return { success: false, error: 'Server error: ' + text.slice(0, 100) };
+      }
     } catch (error) {
       console.error('API checkIn error:', error);
       return { success: false, error: 'Network error: could not connect to server' };

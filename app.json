@@ -14,7 +14,8 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "CAMERA"
       ],
       "adaptiveIcon": {
         "backgroundColor": "#0F172A",
@@ -30,6 +31,12 @@
       "expo-font",
       "expo-status-bar",
       "expo-sharing",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow TechSigaram Attendance to access your camera for face biometric check-in."
+        }
+      ],
       [
         "expo-notifications",
         {

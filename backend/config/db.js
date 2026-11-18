@@ -84,6 +84,11 @@ async function initializeDatabase() {
     } catch (e) {
       // Ignore if already exists
     }
+    try {
+      await pool.query("ALTER TABLE users ADD COLUMN face_embedding TEXT DEFAULT NULL");
+    } catch (e) {
+      // Ignore if already exists
+    }
 
     // Ensure checkin_reminders tracking table exists
     await pool.query(`

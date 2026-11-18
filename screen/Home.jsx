@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -34,6 +34,7 @@ import LeaveTabSection from '../components/home/LeaveTabSection';
 import ProjectMappingModal from '../components/home/ProjectMappingModal';
 import CreateProjectModal from '../components/home/CreateProjectModal';
 import CalendarPickerModal from '../components/home/CalendarPickerModal';
+import FaceScanModal from '../components/FaceScanModal';
 
 const isInTimeAfterTen = (time) => {
   if (!time) return false;
@@ -239,6 +240,11 @@ export default function Home({
   const [totalDays, setTotalDays] = useState(0);
   const [todayStatus, setTodayStatus] = useState('NOT IN');
 
+  // Face Biometric Authentication State
+  const [faceModalVisible, setFaceModalVisible] = useState(false);
+  const [faceModalMode, setFaceModalMode] = useState('verify'); // 'verify' | 'register'
+  const pendingCheckInRef = useRef(null);
+
   const [isInPressed, setIsInPressed] = useState(false);
   const [isOutPressed, setIsOutPressed] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -303,12 +309,13 @@ export default function Home({
   const effectiveCoords = coords || liveDeviceCoords;
   const effectiveAreaName = areaName || liveDeviceAreaName;
 
-  // Live Timer State (ticks every 1 second when shift is active)
+  // Live Timer State (ticks every 1 second ONLY after check-in & all verifications complete)
   const [now, setNow] = useState(() => Date.now());
+  const [shiftStartMs, setShiftStartMs] = useState(null);
 
   useEffect(() => {
     let interval = null;
-    if (todayStatus === 'IN' && inTime) {
+    if (todayStatus === 'IN' && inTime && !faceModalVisible) {
       interval = setInterval(() => {
         setNow(Date.now());
       }, 1000);
@@ -316,10 +323,10 @@ export default function Home({
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [todayStatus, inTime]);
+  }, [todayStatus, inTime, faceModalVisible]);
 
   const calculateShiftStats = () => {
-    if (!inTime) {
+    if (todayStatus === 'NOT IN' || !inTime) {
       return {
         formattedDuration: '0h 00m',
         formattedSeconds: '00s',
@@ -330,7 +337,10 @@ export default function Home({
       };
     }
 
-    const startDate = parseTimeStringToDate(inTime);
+    const startDate =
+      todayStatus === 'IN' && shiftStartMs
+        ? new Date(shiftStartMs)
+        : parseTimeStringToDate(inTime);
     if (!startDate) {
       return {
         formattedDuration: '0h 00m',
@@ -351,8 +361,10 @@ export default function Home({
     }
 
     let diffMs = endDate.getTime() - startDate.getTime();
-    if (diffMs < 0) {
+    if (diffMs < -60000) {
       diffMs += 24 * 60 * 60 * 1000;
+    } else if (diffMs < 0) {
+      diffMs = 0;
     }
 
     const totalSeconds = Math.max(0, Math.floor(diffMs / 1000));
@@ -1117,9 +1129,66 @@ export default function Home({
     }
 
     const { lat, lon, latStr, lonStr } = loc;
-    const currentTime = getCurrentFormattedTime();
 
-    // Immediately resolve locality name on check-in
+    // Store pending GPS only — DO NOT capture check-in time or start timer until ALL permissions & face verification complete
+    pendingCheckInRef.current = { lat, lon, latStr, lonStr };
+    setIsLocating(false);
+
+    // Mandatory Face Verification: Camera scan is strictly required before check-in
+    if (!user?.id) {
+      pendingCheckInRef.current = null;
+      Alert.alert('Notice', 'User session expired. Please log in again.');
+      return;
+    }
+
+    // Always open face scan — determines register vs verify mode for the UI label
+    try {
+      const faceRes = await api.getFaceStatus(user.id);
+      setFaceModalMode(faceRes?.isFaceRegistered ? 'verify' : 'register');
+    } catch (_err) {
+      setFaceModalMode('register');
+    }
+
+    // ALWAYS open face scan modal - NEVER allow punch-in without face verification!
+    setFaceModalVisible(true);
+  };
+
+  const completeCheckIn = async (latStr, lonStr, lat, lon, imageBase64) => {
+    if (!user?.id) {
+      return { success: false, error: 'User session expired. Please log in again.' };
+    }
+
+    if (!imageBase64 || typeof imageBase64 !== 'string' || imageBase64.length < 500) {
+      return { success: false, error: 'Live face photo is required for Check-IN.' };
+    }
+
+    // Capture check-in timestamp now — AFTER all permissions and live face capture are done
+    const verifiedTime = getCurrentFormattedTime();
+
+    let res;
+    try {
+      res = await api.checkIn(user.id, verifiedTime, latStr, lonStr, imageBase64);
+    } catch (err) {
+      console.error('Check-in error:', err);
+      return { success: false, error: 'Server connection error during face verification.' };
+    }
+
+    if (!res?.success) {
+      if (res?.requiresFaceRegistration) {
+        setFaceModalMode('register');
+      }
+      return {
+        success: false,
+        error: res?.error || 'Face verification failed. Please try again.',
+        requiresFaceRegistration: !!res?.requiresFaceRegistration,
+      };
+    }
+
+    // Only start shift timer & update UI AFTER server AI face verification succeeds
+    const completedAtMs = Date.now();
+    const finalInTime = res?.data?.inTime || verifiedTime;
+    pendingCheckInRef.current = null;
+
     setIsResolvingArea(true);
     resolveAreaName(lat, lon)
       .then((place) => {
@@ -1127,22 +1196,10 @@ export default function Home({
       })
       .finally(() => setIsResolvingArea(false));
 
-    setIsLocating(false);
-
-    if (user?.id) {
-      try {
-        const res = await api.checkIn(user.id, currentTime, latStr, lonStr);
-        if (!res.success) {
-          Alert.alert('Notice', res.error || 'Failed to record Check-IN');
-          return;
-        }
-      } catch (err) {
-        console.error('Check-in error:', err);
-      }
-    }
-
+    setShiftStartMs(completedAtMs);
+    setNow(completedAtMs);
     setIsInPressed(true);
-    setInTime(currentTime);
+    setInTime(finalInTime);
     setCoords({ latitude: latStr, longitude: lonStr });
     setTodayStatus('IN');
 
@@ -1155,7 +1212,7 @@ export default function Home({
           name: displayName,
           date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
           status: 'IN',
-          inTime: currentTime,
+          inTime: finalInTime,
           outTime: '--:--',
           latitude: latStr,
           longitude: lonStr,
@@ -1165,6 +1222,57 @@ export default function Home({
     }
 
     loadTodayAttendance();
+
+    const pct = res?.verification?.matchPercent;
+    return {
+      success: true,
+      message: pct ? `Face verified (${pct}% match)! Checked IN.` : 'Face verified! Checked IN.',
+    };
+  };
+
+  const handleFacePhotoSubmit = async (imageBase64) => {
+    const pending = pendingCheckInRef.current;
+    if (!pending) {
+      return { success: false, error: 'Check-in session expired. Please try again.' };
+    }
+
+    if (!imageBase64 || imageBase64.length < 500) {
+      return { success: false, error: 'Invalid camera image. Please try again.' };
+    }
+
+    if (faceModalMode === 'register') {
+      const regRes = await api.registerFace(user.id, imageBase64);
+      if (!regRes?.success) {
+        return {
+          success: false,
+          error: regRes?.error || 'Face registration failed. Ensure your face is clearly visible.',
+        };
+      }
+      setFaceModalMode('verify');
+      const checkRes = await completeCheckIn(
+        pending.latStr,
+        pending.lonStr,
+        pending.lat,
+        pending.lon,
+        imageBase64
+      );
+      if (checkRes.success) {
+        return {
+          success: true,
+          message: 'Face registered & Checked IN successfully!',
+        };
+      }
+      return checkRes;
+    }
+
+    // Verification mode: server runs real AI face detection + ResNet-34 identity comparison
+    return completeCheckIn(
+      pending.latStr,
+      pending.lonStr,
+      pending.lat,
+      pending.lon,
+      imageBase64
+    );
   };
 
   const handleOutPress = async () => {
@@ -1204,6 +1312,7 @@ export default function Home({
     }
 
     setIsPunchedOutLoading(false);
+    setShiftStartMs(null);
     setIsOutPressed(true);
     setOutTime(currentTime);
     setTodayStatus('OUT');
@@ -1296,8 +1405,24 @@ export default function Home({
     }
   };
 
+  if (faceModalVisible) {
+    return (
+      <FaceScanModal
+        visible={faceModalVisible}
+        onClose={() => {
+          pendingCheckInRef.current = null;
+          setFaceModalVisible(false);
+        }}
+        mode={faceModalMode}
+        userName={displayName}
+        onVerifyPhoto={handleFacePhotoSubmit}
+      />
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.rootWrapper}>
+      <SafeAreaView style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
@@ -1503,10 +1628,16 @@ export default function Home({
         onCreateProject={handleCreateNewProject}
       />
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  rootWrapper: {
+    flex: 1,
+    backgroundColor: THEME.colors.background,
+    position: 'relative',
+  },
   safeArea: {
     flex: 1,
     backgroundColor: THEME.colors.background,

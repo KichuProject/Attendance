@@ -3,6 +3,12 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../config/db');
+const {
+  MODEL_TAG,
+  extractFaceDescriptor,
+  parseStoredFaceTemplate,
+  serializeFaceTemplate,
+} = require('../utils/faceAiEngine');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'attendance_secret_key';
 
@@ -313,6 +319,108 @@ router.post('/push-token', async (req, res) => {
   } catch (error) {
     console.error('Save push token error:', error);
     res.status(500).json({ success: false, error: 'Server error saving push token' });
+  }
+});
+
+// Get Face Registration Status
+router.get('/face-status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+
+    let rows = [];
+    if (isNum) {
+      const [r] = await pool.query('SELECT id, face_embedding FROM users WHERE id = ?', [Number(userId)]);
+      rows = r;
+    } else {
+      const [r] = await pool.query('SELECT id, face_embedding FROM users WHERE username = ? OR emp_id = ?', [userId, userId]);
+      rows = r;
+    }
+
+    if (rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const template = parseStoredFaceTemplate(rows[0].face_embedding);
+    res.json({
+      success: true,
+      isFaceRegistered: template.valid,
+      model: MODEL_TAG,
+    });
+  } catch (error) {
+    console.error('Face status error:', error);
+    res.status(500).json({ success: false, error: 'Error checking face registration status' });
+  }
+});
+
+// Register or Update User Face Biometrics (Runs real AI Face Detection + ResNet-34 128-D Embedding)
+router.post('/register-face', async (req, res) => {
+  try {
+    const { userId, imageBase64, selfieBase64 } = req.body;
+    const photoBase64 = imageBase64 || selfieBase64;
+
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId is required' });
+    }
+
+    if (!photoBase64 || typeof photoBase64 !== 'string' || photoBase64.length < 500) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_PHOTO',
+        error: 'A live camera photo of your face is required for registration.',
+      });
+    }
+
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+    const [userRows] = isNum
+      ? await pool.query('SELECT id, name FROM users WHERE id = ? OR username = ? OR emp_id = ? LIMIT 1', [
+        Number(userId),
+        String(userId),
+        String(userId),
+      ])
+      : await pool.query('SELECT id, name FROM users WHERE username = ? OR emp_id = ? LIMIT 1', [
+        String(userId),
+        String(userId),
+      ]);
+
+    if (userRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    // Run real AI face detection, Passive Anti-Spoof & 128-D ResNet-34 extraction
+    const extraction = await extractFaceDescriptor(photoBase64);
+    if (!extraction.ok) {
+      const statusCode = extraction.code === 'SPOOF_DETECTED' ? 403 : 400;
+      console.warn(`[FaceAI Enroll Rejected] User: ${userId} | Reason: ${extraction.code} - ${extraction.error}`);
+      return res.status(statusCode).json({
+        success: false,
+        code: extraction.code,
+        error: extraction.error,
+        ...(extraction.antiSpoof ? { antiSpoof: extraction.antiSpoof } : {}),
+      });
+    }
+
+    const embeddingJson = serializeFaceTemplate(extraction.descriptor);
+
+    await pool.query('UPDATE users SET face_embedding = ? WHERE id = ?', [
+      embeddingJson,
+      userRows[0].id,
+    ]);
+
+    console.log(
+      `[FaceAI Enrolled] User: ${userRows[0].id} (${userRows[0].name}) | Confidence: ${extraction.confidence} | Real: ${extraction.antiSpoof?.realPercent}% | Live: ${extraction.antiSpoof?.livePercent}% | 128-D ResNet-34 saved`
+    );
+
+    res.json({
+      success: true,
+      message: 'Live face biometric profile registered successfully',
+      confidence: extraction.confidence,
+      antiSpoof: extraction.antiSpoof,
+      model: MODEL_TAG,
+    });
+  } catch (error) {
+    console.error('Face registration error:', error);
+    res.status(500).json({ success: false, error: 'Failed to process face registration on server' });
   }
 });
 

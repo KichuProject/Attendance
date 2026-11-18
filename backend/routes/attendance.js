@@ -1,6 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
+const {
+  extractFaceDescriptor,
+  parseStoredFaceTemplate,
+  compareFaceDescriptors,
+} = require('../utils/faceAiEngine');
 
 function formatDateString(dateObj) {
   if (!dateObj) return '';
@@ -54,26 +59,99 @@ router.get('/today/:userId', async (req, res) => {
 
 router.post('/check-in', async (req, res) => {
   try {
-    const { userId, inTime, latitude, longitude } = req.body;
+    const { userId, inTime, latitude, longitude, imageBase64, selfieBase64 } = req.body;
+    const photoBase64 = imageBase64 || selfieBase64;
 
     if (!userId) {
-      return res.status(400).json({ error: 'User ID is required' });
+      return res.status(400).json({ success: false, error: 'User ID is required' });
     }
 
     if (!latitude || !longitude || latitude === '--' || longitude === '--') {
-      return res.status(400).json({ success: false, error: 'GPS location is required to Check IN. Please turn ON location.' });
+      return res.status(400).json({
+        success: false,
+        error: 'GPS location is required to Check IN. Please turn ON location.',
+      });
     }
 
-    const time = inTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+    // --- 1. Mandatory Live Face Photo Check ---
+    if (!photoBase64 || typeof photoBase64 !== 'string' || photoBase64.length < 500) {
+      return res.status(400).json({
+        success: false,
+        code: 'NO_PHOTO',
+        error: 'Live face verification photo is mandatory for Check-IN. Please scan your face.',
+        requiresFaceScan: true,
+      });
+    }
 
+    const isNum = !isNaN(userId) && Number.isInteger(Number(userId));
+    const [userRows] = await pool.query(
+      isNum
+        ? 'SELECT id, name, face_embedding FROM users WHERE id = ?'
+        : 'SELECT id, name, face_embedding FROM users WHERE username = ? OR emp_id = ?',
+      isNum ? [Number(userId)] : [String(userId), String(userId)]
+    );
+
+    if (userRows.length === 0) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const dbUser = userRows[0];
+
+    // Check if already checked in today before running AI inference
     const [existing] = await pool.query(
       'SELECT id, status FROM attendance WHERE user_id = ? AND date = CURDATE()',
-      [userId]
+      [dbUser.id]
     );
 
     if (existing.length > 0 && (existing[0].status === 'IN' || existing[0].status === 'OUT')) {
-      return res.status(400).json({ error: 'Already checked in today' });
+      return res.status(400).json({ success: false, error: 'Already checked in today' });
     }
+
+    // --- 2. Verify User Has Registered Neural Face Template ---
+    const storedTemplate = parseStoredFaceTemplate(dbUser.face_embedding);
+    if (!storedTemplate.valid) {
+      return res.status(403).json({
+        success: false,
+        code: 'NOT_REGISTERED',
+        error: 'Face profile not registered yet. Please register your face first.',
+        requiresFaceRegistration: true,
+      });
+    }
+
+    // --- 3. Run Real AI Face Detection, Passive Anti-Spoof & 128-D ResNet-34 Extraction ---
+    const extraction = await extractFaceDescriptor(photoBase64);
+    if (!extraction.ok) {
+      const statusCode = extraction.code === 'SPOOF_DETECTED' ? 403 : 400;
+      console.warn(
+        `[FaceAI Check-IN Blocked] User: ${dbUser.id} (${dbUser.name}) | Code: ${extraction.code} | ${extraction.error}`
+      );
+      return res.status(statusCode).json({
+        success: false,
+        code: extraction.code,
+        error: extraction.error,
+        ...(extraction.antiSpoof ? { antiSpoof: extraction.antiSpoof } : {}),
+      });
+    }
+
+    // --- 4. Biometric Identity Matching (ResNet-34 Euclidean Distance + Cosine) ---
+    const match = compareFaceDescriptors(storedTemplate.descriptor, extraction.descriptor);
+
+    console.log(
+      `[FaceAI Verify] User: ${dbUser.id} (${dbUser.name}) | Distance: ${match.distance} (max ${match.threshold}) | Cosine: ${match.cosine} | Match: ${match.matchPercent}% | Result: ${match.matched ? 'PASS' : 'REJECT'}`
+    );
+
+    if (!match.matched) {
+      return res.status(403).json({
+        success: false,
+        code: 'FACE_MISMATCH',
+        error: `Face verification failed! Face does not match ${dbUser.name} (${match.matchPercent}% similarity).`,
+        matchPercent: match.matchPercent,
+        distance: match.distance,
+      });
+    }
+
+    // --- 5. Verified! Record Attendance Check-IN ---
+    const time = inTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
 
     await pool.query(
       `INSERT INTO attendance (user_id, date, status, in_time, latitude, longitude)
@@ -83,12 +161,18 @@ router.post('/check-in', async (req, res) => {
          in_time = VALUES(in_time),
          latitude = VALUES(latitude),
          longitude = VALUES(longitude)`,
-      [userId, time, latitude || null, longitude || null]
+      [dbUser.id, time, latitude || null, longitude || null]
     );
 
     res.json({
       success: true,
-      message: 'Checked IN successfully',
+      message: 'Face verified & Checked IN successfully',
+      verification: {
+        matchPercent: match.matchPercent,
+        distance: match.distance,
+        confidence: extraction.confidence,
+        antiSpoof: extraction.antiSpoof,
+      },
       data: {
         status: 'IN',
         inTime: time,
@@ -98,7 +182,7 @@ router.post('/check-in', async (req, res) => {
     });
   } catch (error) {
     console.error('Check-in error:', error);
-    res.status(500).json({ error: 'Failed to record Check-IN' });
+    res.status(500).json({ success: false, error: 'Failed to record Check-IN' });
   }
 });
 
