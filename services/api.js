@@ -115,12 +115,14 @@ export const api = {
     }
   },
 
-  registerFace: async (userId, imageBase64) => {
+  registerFace: async (userId, imageBase64, ovalBounds = null) => {
     try {
+      const payload = { userId, imageBase64 };
+      if (ovalBounds) payload.ovalBounds = ovalBounds;
       const res = await fetch(`${API_BASE_URL}/auth/register-face`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId, imageBase64 }),
+        body: JSON.stringify(payload),
       });
       const text = await res.text();
       try {
@@ -135,11 +137,14 @@ export const api = {
   },
 
   // Punch IN with Lat & Lon and mandatory live face verification photo (base64 JPEG)
-  checkIn: async (userId, inTime, latitude, longitude, imageBase64 = null) => {
+  checkIn: async (userId, inTime, latitude, longitude, imageBase64 = null, ovalBounds = null) => {
     try {
       const payload = { userId, inTime, latitude, longitude };
       if (imageBase64 && typeof imageBase64 === 'string') {
         payload.imageBase64 = imageBase64;
+      }
+      if (ovalBounds) {
+        payload.ovalBounds = ovalBounds;
       }
       const res = await fetch(`${API_BASE_URL}/attendance/check-in`, {
         method: 'POST',

@@ -40,6 +40,9 @@ export default function FaceScanModal({
 
   const cameraRef = useRef(null);
   const hasPromptedRef = useRef(false);
+  const containerLayoutRef = useRef({ width: WIN.width, height: WIN.height });
+  const ovalStageLayoutRef = useRef(null);
+  const ovalBoxLayoutRef = useRef(null);
   const [pulseAnim] = useState(() => new Animated.Value(1));
   const [scanLineAnim] = useState(() => new Animated.Value(0));
 
@@ -140,6 +143,35 @@ export default function FaceScanModal({
     };
   }, [visible, pulseAnim, scanLineAnim]);
 
+  const getMeasuredOvalBounds = () => {
+    const screenW = containerLayoutRef.current?.width || WIN.width;
+    const screenH = containerLayoutRef.current?.height || WIN.height;
+    const stage = ovalStageLayoutRef.current;
+    const oval = ovalBoxLayoutRef.current;
+
+    if (stage && oval && screenW > 0 && screenH > 0) {
+      const ovalAbsX = stage.x + oval.x;
+      const ovalAbsY = stage.y + oval.y;
+      return {
+        cx: Number(((ovalAbsX + oval.width / 2) / screenW).toFixed(4)),
+        cy: Number(((ovalAbsY + oval.height / 2) / screenH).toFixed(4)),
+        rx: Number((oval.width / 2 / screenW).toFixed(4)),
+        ry: Number((oval.height / 2 / screenH).toFixed(4)),
+        screenW: Math.round(screenW),
+        screenH: Math.round(screenH),
+      };
+    }
+
+    return {
+      cx: 0.5,
+      cy: 0.43,
+      rx: Number((OVAL_WIDTH / 2 / Math.max(1, screenW)).toFixed(4)),
+      ry: Number((OVAL_HEIGHT / 2 / Math.max(1, screenH)).toFixed(4)),
+      screenW: Math.round(screenW),
+      screenH: Math.round(screenH),
+    };
+  };
+
   const handleCapture = async () => {
     if (!cameraRef.current || isProcessing || !isCameraReady) return;
 
@@ -148,6 +180,8 @@ export default function FaceScanModal({
       setScanStatus('scanning');
       setStatusMessage('Capturing face photo...');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+      const ovalBounds = getMeasuredOvalBounds();
 
       // IMPORTANT: skipProcessing MUST be false so quality compression & upright EXIF rotation work.
       // quality 0.7 preserves crisp skin & screen moire textures for backend Passive Anti-Spoofing.
@@ -164,13 +198,13 @@ export default function FaceScanModal({
 
       setStatusMessage(
         mode === 'register'
-          ? 'AI checking live face & registering biometric profile...'
-          : 'AI checking live face & verifying your identity...'
+          ? 'AI checking face inside oval & registering profile...'
+          : 'AI checking face inside oval & verifying identity...'
       );
 
-      // Wait for REAL backend AI verification before allowing punch-in
+      // Wait for REAL backend AI verification (strictly inside oval only) before allowing punch-in
       const result = onVerifyPhoto
-        ? await onVerifyPhoto(photo.base64)
+        ? await onVerifyPhoto({ imageBase64: photo.base64, ovalBounds })
         : { success: false, error: 'Verification handler missing' };
 
       if (!result?.success) {
@@ -213,7 +247,12 @@ export default function FaceScanModal({
       : '#EA580C';
 
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      onLayout={(e) => {
+        containerLayoutRef.current = e.nativeEvent.layout;
+      }}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
 
       {/* 1. Full-screen unobstructed CameraView (normal flex: 1 layout — works reliably on Android) */}
@@ -312,8 +351,17 @@ export default function FaceScanModal({
           </SafeAreaView>
 
           {/* Center Transparent Oval Guide (no background tint blocking camera) */}
-          <View style={styles.ovalStage} pointerEvents="none">
+          <View
+            style={styles.ovalStage}
+            pointerEvents="none"
+            onLayout={(e) => {
+              ovalStageLayoutRef.current = e.nativeEvent.layout;
+            }}
+          >
             <Animated.View
+              onLayout={(e) => {
+                ovalBoxLayoutRef.current = e.nativeEvent.layout;
+              }}
               style={[
                 styles.oval,
                 {

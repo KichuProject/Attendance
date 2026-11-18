@@ -334,12 +334,141 @@ async function runPassiveAntiSpoof(sourceTensor, imgW, imgH, box, detectW, detec
 }
 
 /**
- * Full AI pipeline on a base64 JPEG camera photo:
- *  1. Human face detection (blocks blank walls, covered cameras, multiple faces, tiny faces)
- *  2. Passive Anti-Spoof + Liveness check (blocks printed photos & phone screens)
- *  3. ResNet-34 128-D face embedding extraction
+ * Maps screen-space normalized oval bounds { cx, cy, rx, ry, screenW, screenH }
+ * into the captured JPEG image's exact normalized [0..1] coordinate space,
+ * accounting for CameraView's center-crop FILL aspect ratio scaling.
  */
-async function extractFaceDescriptor(base64Image) {
+function resolveImageOval(ovalBounds, imgW, imgH) {
+  // Default center oval if client didn't send measured screen bounds
+  const defaultOval = { cx: 0.5, cy: 0.44, rx: 0.28, ry: 0.24 };
+
+  if (!ovalBounds || typeof ovalBounds !== 'object') {
+    return defaultOval;
+  }
+
+  const rawCx = Number(ovalBounds.cx);
+  const rawCy = Number(ovalBounds.cy);
+  const rawRx = Number(ovalBounds.rx);
+  const rawRy = Number(ovalBounds.ry);
+  const screenW = Number(ovalBounds.screenW);
+  const screenH = Number(ovalBounds.screenH);
+
+  if (
+    !Number.isFinite(rawCx) ||
+    !Number.isFinite(rawCy) ||
+    !Number.isFinite(rawRx) ||
+    !Number.isFinite(rawRy) ||
+    rawRx <= 0.05 ||
+    rawRy <= 0.05
+  ) {
+    return defaultOval;
+  }
+
+  // If valid screen dimensions were supplied, apply exact FILL center-crop mapping
+  if (Number.isFinite(screenW) && Number.isFinite(screenH) && screenW > 0 && screenH > 0) {
+    const scale = Math.max(screenW / imgW, screenH / imgH);
+    const renderedW = imgW * scale;
+    const renderedH = imgH * scale;
+    const offsetX = (renderedW - screenW) / 2;
+    const offsetY = (renderedH - screenH) / 2;
+
+    const screenCx = rawCx * screenW;
+    const screenCy = rawCy * screenH;
+    const screenRx = rawRx * screenW;
+    const screenRy = rawRy * screenH;
+
+    return {
+      cx: Math.max(0.1, Math.min(0.9, (screenCx + offsetX) / renderedW)),
+      cy: Math.max(0.1, Math.min(0.9, (screenCy + offsetY) / renderedH)),
+      rx: Math.max(0.1, Math.min(0.49, screenRx / renderedW)),
+      ry: Math.max(0.1, Math.min(0.49, screenRy / renderedH)),
+    };
+  }
+
+  return {
+    cx: Math.max(0.1, Math.min(0.9, rawCx)),
+    cy: Math.max(0.1, Math.min(0.9, rawCy)),
+    rx: Math.max(0.1, Math.min(0.49, rawRx)),
+    ry: Math.max(0.1, Math.min(0.49, rawRy)),
+  };
+}
+
+/**
+ * Checks whether a normalized point (nx, ny) lies inside an ellipse { cx, cy, rx, ry }
+ * scaled by optional `radiusScale`.
+ */
+function ellipseDistSq(nx, ny, oval, radiusScale = 1.0) {
+  const dx = (nx - oval.cx) / Math.max(0.01, oval.rx * radiusScale);
+  const dy = (ny - oval.cy) / Math.max(0.01, oval.ry * radiusScale);
+  return { dx, dy, distSq: dx * dx + dy * dy };
+}
+
+/**
+ * Strictly validates that the detected face center, key facial landmarks
+ * (eyes, nose, mouth), and face size sit cleanly inside the exact oval frame.
+ */
+function validateFaceInsideOval(face, imgW, imgH, oval) {
+  const box = face.detection.box;
+  const faceCx = (box.x + box.width / 2) / imgW;
+  const faceCy = (box.y + box.height / 2) / imgH;
+
+  const { dx, dy, distSq: centerDistSq } = ellipseDistSq(faceCx, faceCy, oval, 1.0);
+
+  // 1. Face center must sit clearly inside the oval (within ~78% of oval radius from center)
+  if (centerDistSq > 0.62) {
+    let hint = 'Face is outside the oval! Center your face inside the oval frame.';
+    if (Math.abs(dx) > Math.abs(dy)) {
+      hint = 'Face is outside the oval! Move your face horizontally into the center of the oval.';
+    } else if (dy < 0) {
+      hint = 'Face is too high! Move down slightly so your face sits inside the oval.';
+    } else {
+      hint = 'Face is too low! Move up slightly so your face sits inside the oval.';
+    }
+    return { ok: false, code: 'FACE_OUTSIDE_OVAL', error: hint };
+  }
+
+  // 2. Core facial landmarks (left eye, right eye, nose tip, mouth corners) must lie strictly inside the oval
+  if (face.landmarks) {
+    const pts = face.landmarks.positions || [];
+    const keyIndices = [36, 39, 42, 45, 30, 48, 54];
+    for (const idx of keyIndices) {
+      const pt = pts[idx];
+      if (!pt) continue;
+      const px = pt.x / imgW;
+      const py = pt.y / imgH;
+      const { distSq } = ellipseDistSq(px, py, oval, 1.0);
+      if (distSq > 1.02) {
+        return {
+          ok: false,
+          code: 'FACE_OUTSIDE_OVAL',
+          error: 'Keep your full face (eyes, nose & mouth) completely inside the oval.',
+        };
+      }
+    }
+  }
+
+  // 3. Face size relative to oval (prevent tiny distant faces inside the oval)
+  const ovalWidthPx = oval.rx * 2 * imgW;
+  const faceToOvalRatio = box.width / Math.max(1, ovalWidthPx);
+  if (faceToOvalRatio < 0.28) {
+    return {
+      ok: false,
+      code: 'FACE_UNCLEAR',
+      error: 'Move closer to the camera so your face fills the oval frame.',
+    };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Full AI pipeline on a base64 JPEG camera photo:
+ *  1. Human face detection
+ *  2. Oval-only filtering & strict inside-oval center + landmark containment check (faces outside oval are rejected)
+ *  3. Passive Anti-Spoof + Liveness check on full-res crop (blocks printed photos & phone screens)
+ *  4. ResNet-34 128-D face embedding extraction
+ */
+async function extractFaceDescriptor(base64Image, ovalBounds = null) {
   await initFaceAiEngine();
 
   let decodedObj;
@@ -366,12 +495,13 @@ async function extractFaceDescriptor(base64Image) {
   const extraTensors = [];
 
   try {
-    let detections = await detectOnTensor(detectTensor);
     let activeDetectW = detectWidth;
     let activeDetectH = detectHeight;
     let activeFullTensor = fullTensor;
     let activeFullW = fullWidth;
     let activeFullH = fullHeight;
+
+    let detections = await detectOnTensor(detectTensor);
 
     // Rotation fallback if an Android camera returns a 90°/270° rotated frame
     if (detections.length === 0) {
@@ -420,30 +550,46 @@ async function extractFaceDescriptor(base64Image) {
       };
     }
 
-    if (detections.length > 1) {
+    // Resolve exact screen oval in photo coordinates and ONLY inspect faces inside the oval
+    const activeOval = resolveImageOval(ovalBounds, activeDetectW, activeDetectH);
+
+    const facesInsideOval = detections.filter((d) => {
+      const b = d.detection.box;
+      const cx = (b.x + b.width / 2) / activeDetectW;
+      const cy = (b.y + b.height / 2) / activeDetectH;
+      return ellipseDistSq(cx, cy, activeOval, 1.0).distSq <= 1.0;
+    });
+
+    if (facesInsideOval.length === 0) {
+      // A face exists in the frame, but it is OUTSIDE the oval!
+      const nearest = detections[0];
+      const ovalCheck = validateFaceInsideOval(nearest, activeDetectW, activeDetectH, activeOval);
+      return {
+        ok: false,
+        code: 'FACE_OUTSIDE_OVAL',
+        error: ovalCheck.error || 'Face is outside the oval! Position your face inside the oval frame.',
+      };
+    }
+
+    if (facesInsideOval.length > 1) {
       return {
         ok: false,
         code: 'MULTIPLE_FACES',
-        error: `Multiple faces detected (${detections.length}). Only 1 employee should be in the camera frame.`,
+        error: `Multiple faces detected inside the oval (${facesInsideOval.length}). Only 1 employee is allowed.`,
       };
     }
 
-    const face = detections[0];
+    const face = facesInsideOval[0];
     const score = Number(face.detection.score.toFixed(4));
     const box = face.detection.box;
 
-    // Ensure the detected face isn't tiny / far away
-    const faceWidthRatio = box.width / Math.max(1, activeDetectW);
-    const faceHeightRatio = box.height / Math.max(1, activeDetectH);
-    if (faceWidthRatio < 0.12 && faceHeightRatio < 0.12) {
-      return {
-        ok: false,
-        code: 'FACE_UNCLEAR',
-        error: 'Your face is too far away. Move closer to the camera so your face fills the oval.',
-      };
+    // Strictly verify face center, eyes/nose/mouth landmarks, and size sit inside the oval
+    const ovalCheck = validateFaceInsideOval(face, activeDetectW, activeDetectH, activeOval);
+    if (!ovalCheck.ok) {
+      return ovalCheck;
     }
 
-    // --- Passive Anti-Spoof & Liveness Verification ---
+    // --- Passive Anti-Spoof & Liveness Verification (on unmasked full-res tensor) ---
     const antiSpoof = await runPassiveAntiSpoof(
       activeFullTensor,
       activeFullW,
@@ -577,6 +723,8 @@ module.exports = {
   DEFAULT_MAX_DISTANCE,
   initFaceAiEngine,
   extractFaceDescriptor,
+  resolveImageOval,
+  validateFaceInsideOval,
   parseStoredFaceTemplate,
   serializeFaceTemplate,
   compareFaceDescriptors,

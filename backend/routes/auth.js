@@ -356,7 +356,7 @@ router.get('/face-status/:userId', async (req, res) => {
 // Register or Update User Face Biometrics (Runs real AI Face Detection + ResNet-34 128-D Embedding)
 router.post('/register-face', async (req, res) => {
   try {
-    const { userId, imageBase64, selfieBase64 } = req.body;
+    const { userId, imageBase64, selfieBase64, ovalBounds } = req.body;
     const photoBase64 = imageBase64 || selfieBase64;
 
     if (!userId) {
@@ -387,8 +387,8 @@ router.post('/register-face', async (req, res) => {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
-    // Run real AI face detection, Passive Anti-Spoof & 128-D ResNet-34 extraction
-    const extraction = await extractFaceDescriptor(photoBase64);
+    // Run real AI face detection (oval-only), Passive Anti-Spoof & 128-D ResNet-34 extraction
+    const extraction = await extractFaceDescriptor(photoBase64, ovalBounds);
     if (!extraction.ok) {
       const statusCode = extraction.code === 'SPOOF_DETECTED' ? 403 : 400;
       console.warn(`[FaceAI Enroll Rejected] User: ${userId} | Reason: ${extraction.code} - ${extraction.error}`);

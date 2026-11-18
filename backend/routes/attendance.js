@@ -59,7 +59,7 @@ router.get('/today/:userId', async (req, res) => {
 
 router.post('/check-in', async (req, res) => {
   try {
-    const { userId, inTime, latitude, longitude, imageBase64, selfieBase64 } = req.body;
+    const { userId, inTime, latitude, longitude, imageBase64, selfieBase64, ovalBounds } = req.body;
     const photoBase64 = imageBase64 || selfieBase64;
 
     if (!userId) {
@@ -118,8 +118,8 @@ router.post('/check-in', async (req, res) => {
       });
     }
 
-    // --- 3. Run Real AI Face Detection, Passive Anti-Spoof & 128-D ResNet-34 Extraction ---
-    const extraction = await extractFaceDescriptor(photoBase64);
+    // --- 3. Run Real AI Face Detection (oval-only), Passive Anti-Spoof & 128-D ResNet-34 Extraction ---
+    const extraction = await extractFaceDescriptor(photoBase64, ovalBounds);
     if (!extraction.ok) {
       const statusCode = extraction.code === 'SPOOF_DETECTED' ? 403 : 400;
       console.warn(

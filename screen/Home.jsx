@@ -1153,7 +1153,7 @@ export default function Home({
     setFaceModalVisible(true);
   };
 
-  const completeCheckIn = async (latStr, lonStr, lat, lon, imageBase64) => {
+  const completeCheckIn = async (latStr, lonStr, lat, lon, imageBase64, ovalBounds = null) => {
     if (!user?.id) {
       return { success: false, error: 'User session expired. Please log in again.' };
     }
@@ -1167,7 +1167,7 @@ export default function Home({
 
     let res;
     try {
-      res = await api.checkIn(user.id, verifiedTime, latStr, lonStr, imageBase64);
+      res = await api.checkIn(user.id, verifiedTime, latStr, lonStr, imageBase64, ovalBounds);
     } catch (err) {
       console.error('Check-in error:', err);
       return { success: false, error: 'Server connection error during face verification.' };
@@ -1230,7 +1230,12 @@ export default function Home({
     };
   };
 
-  const handleFacePhotoSubmit = async (imageBase64) => {
+  const handleFacePhotoSubmit = async (capturePayload) => {
+    const imageBase64 =
+      typeof capturePayload === 'string' ? capturePayload : capturePayload?.imageBase64;
+    const ovalBounds =
+      typeof capturePayload === 'object' ? capturePayload?.ovalBounds || null : null;
+
     const pending = pendingCheckInRef.current;
     if (!pending) {
       return { success: false, error: 'Check-in session expired. Please try again.' };
@@ -1241,11 +1246,11 @@ export default function Home({
     }
 
     if (faceModalMode === 'register') {
-      const regRes = await api.registerFace(user.id, imageBase64);
+      const regRes = await api.registerFace(user.id, imageBase64, ovalBounds);
       if (!regRes?.success) {
         return {
           success: false,
-          error: regRes?.error || 'Face registration failed. Ensure your face is clearly visible.',
+          error: regRes?.error || 'Face registration failed. Ensure your face is clearly inside the oval.',
         };
       }
       setFaceModalMode('verify');
@@ -1254,7 +1259,8 @@ export default function Home({
         pending.lonStr,
         pending.lat,
         pending.lon,
-        imageBase64
+        imageBase64,
+        ovalBounds
       );
       if (checkRes.success) {
         return {
@@ -1265,13 +1271,14 @@ export default function Home({
       return checkRes;
     }
 
-    // Verification mode: server runs real AI face detection + ResNet-34 identity comparison
+    // Verification mode: server runs oval-only AI face detection + Passive Anti-Spoof + ResNet-34 comparison
     return completeCheckIn(
       pending.latStr,
       pending.lonStr,
       pending.lat,
       pending.lon,
-      imageBase64
+      imageBase64,
+      ovalBounds
     );
   };
 
