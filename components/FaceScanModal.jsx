@@ -16,10 +16,11 @@ import {
   NativeModules,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { File } from 'expo-file-system';
 import FaceDetection from '@react-native-ml-kit/face-detection';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 const WIN = Dimensions.get('window');
@@ -240,8 +241,7 @@ export default function FaceScanModal({
     };
   }, []);
 
-  const [pulseAnim] = useState(() => new Animated.Value(1));
-  const [scanLineAnim] = useState(() => new Animated.Value(0));
+  const [ringOpacityAnim] = useState(() => new Animated.Value(0.35));
 
   const isPermissionGranted = permission?.granted === true;
   const isPermissionLoading = permission === null;
@@ -448,31 +448,25 @@ export default function FaceScanModal({
     return () => sub.remove();
   }, [visible, handleModalClose]);
 
-  // Scanner laser & pulse animation
+  // Subtle concentric ring opacity breath only when face is locked or verifying
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || (scanStatus !== 'locked' && scanStatus !== 'scanning')) {
+      ringOpacityAnim.setValue(0);
+      return;
+    }
 
-    const pulseLoop = Animated.loop(
+    const breathLoop = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.03, duration: 1100, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        Animated.timing(ringOpacityAnim, { toValue: 0.75, duration: 750, useNativeDriver: true }),
+        Animated.timing(ringOpacityAnim, { toValue: 0.2, duration: 750, useNativeDriver: true }),
       ])
     );
-    pulseLoop.start();
-
-    const scanLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanLineAnim, { toValue: OVAL_HEIGHT - 6, duration: 1500, useNativeDriver: true }),
-        Animated.timing(scanLineAnim, { toValue: 0, duration: 1500, useNativeDriver: true }),
-      ])
-    );
-    scanLoop.start();
+    breathLoop.start();
 
     return () => {
-      pulseLoop.stop();
-      scanLoop.stop();
+      breathLoop.stop();
     };
-  }, [visible, pulseAnim, scanLineAnim]);
+  }, [visible, scanStatus, ringOpacityAnim]);
 
   // ── Hands-Free On-Device Google ML Kit Auto-Detect & Auto-Capture Loop ──
   useEffect(() => {
@@ -603,19 +597,15 @@ export default function FaceScanModal({
   if (!visible) return null;
 
   const ovalBorderColor =
-    scanStatus === 'success'
+    scanStatus === 'success' || scanStatus === 'locked'
       ? '#10B981'
-      : scanStatus === 'locked'
-      ? '#22C55E'
       : scanStatus === 'error'
       ? '#EF4444'
-      : scanStatus === 'scanning'
-      ? '#38BDF8'
       : scanStatus === 'aligning'
       ? '#F59E0B'
-      : '#EA580C';
+      : 'rgba(255, 255, 255, 0.88)';
 
-  const isScanningAnimActive = scanStatus === 'scanning' || scanStatus === 'locked';
+  const isRingActive = scanStatus === 'scanning' || scanStatus === 'locked';
 
   return (
     <View
@@ -626,11 +616,11 @@ export default function FaceScanModal({
     >
       <StatusBar barStyle="light-content" backgroundColor="#000000" translucent={false} />
 
-      {/* 1. Full-screen unobstructed CameraView (silent shutter for hands-free auto-scan) */}
+      {/* 1. Full-screen unobstructed CameraView */}
       {isPermissionLoading ? (
         <View style={styles.fallbackView}>
-          <ActivityIndicator size="large" color="#EA580C" />
-          <Text style={styles.permSubtitle}>Checking camera permission...</Text>
+          <ActivityIndicator size="small" color="#FFFFFF" />
+          <Text style={styles.permSubtitle}>Checking camera access...</Text>
         </View>
       ) : isPermissionGranted ? (
         <CameraView
@@ -654,77 +644,78 @@ export default function FaceScanModal({
         />
       ) : (
         <View style={styles.fallbackView}>
-          <View style={styles.permIconCircle}>
-            <MaterialCommunityIcons name="camera-off" size={44} color="#EA580C" />
-          </View>
-          <Text style={styles.permTitle}>Camera Permission Required</Text>
+          <Ionicons name="camera-outline" size={40} color="rgba(255, 255, 255, 0.85)" style={{ marginBottom: 16 }} />
+          <Text style={styles.permTitle}>Camera access needed</Text>
           <Text style={styles.permSubtitle}>
-            TechSigaram requires camera access to verify your face for attendance Check-IN.
+            Allow camera access to verify your identity for attendance check-in.
           </Text>
           <TouchableOpacity
             style={styles.allowBtn}
             onPress={handleRequestPermission}
             activeOpacity={0.85}
           >
-            <Ionicons name="camera" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-            <Text style={styles.allowBtnText}>Allow Camera Access</Text>
+            <Text style={styles.allowBtnText}>Allow Camera</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.cancelLink} onPress={handleModalClose}>
-            <Text style={styles.cancelText}>Go Back</Text>
+          <TouchableOpacity
+            style={styles.cancelLink}
+            onPress={handleModalClose}
+            hitSlop={{ top: 10, bottom: 10, left: 20, right: 20 }}
+          >
+            <Text style={styles.cancelText}>Not Now</Text>
           </TouchableOpacity>
         </View>
       )}
 
-      {/* 2. Single clean overlay sibling — transparent center so camera preview is 100% clear */}
+      {/* 2. Floating translucent chrome — camera breathes edge-to-edge */}
       {isPermissionGranted && (
         <View style={styles.overlay} pointerEvents="box-none">
-          {/* Top Header */}
-          <SafeAreaView style={styles.headerSafe} edges={['top']}>
-            <View style={styles.header}>
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={handleModalClose}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="close" size={22} color="#FFFFFF" />
-              </TouchableOpacity>
+          {/* Soft top edge-fade scrim + symmetrical floating header */}
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0.68)', 'rgba(0, 0, 0, 0.25)', 'rgba(0, 0, 0, 0)']}
+            locations={[0, 0.65, 1]}
+            style={styles.topScrim}
+            pointerEvents="box-none"
+          >
+            <SafeAreaView edges={['top']}>
+              <View style={styles.header}>
+                <TouchableOpacity
+                  style={styles.circleBtn}
+                  onPress={handleModalClose}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="close" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
 
-              <View style={styles.headerMid}>
-                <Text style={styles.headerTitle} numberOfLines={1}>
-                  {mode === 'register' ? 'Register Face' : 'Face Verification'}
-                </Text>
-                <Text style={styles.headerSub} numberOfLines={1}>
-                  {mode === 'register'
-                    ? `Enrolling ${userName}`
-                    : `Verifying ${userName}`}
-                </Text>
+                <View style={styles.headerCenter}>
+                  <Text style={styles.headerTitle} numberOfLines={1}>
+                    {mode === 'register' ? 'Register Face' : 'Face Verification'}
+                  </Text>
+                  <Text style={styles.headerSub} numberOfLines={1}>
+                    {userName}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.circleBtn, isProcessing && styles.circleBtnDim]}
+                  onPress={() => {
+                    if (!isProcessing) {
+                      setIsCameraReady(false);
+                      setAutoScanPaused(false);
+                      setFacing((prev) => (prev === 'front' ? 'back' : 'front'));
+                    }
+                  }}
+                  disabled={isProcessing}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
+                </TouchableOpacity>
               </View>
+            </SafeAreaView>
+          </LinearGradient>
 
-              <TouchableOpacity
-                style={styles.iconBtn}
-                onPress={() => {
-                  if (!isProcessing) {
-                    setIsCameraReady(false);
-                    setAutoScanPaused(false);
-                    setFacing((prev) => (prev === 'front' ? 'back' : 'front'));
-                  }
-                }}
-                disabled={isProcessing}
-                activeOpacity={0.75}
-              >
-                <Ionicons name="camera-reverse-outline" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-
-              <View style={styles.liveBadge}>
-                <View style={[styles.liveDot, !isCameraReady && { backgroundColor: '#F59E0B' }]} />
-                <Text style={styles.liveText}>
-                  {!isCameraReady ? 'INIT' : hasNativeMlKit && !autoScanPaused ? 'AUTO' : 'LIVE'}
-                </Text>
-              </View>
-            </View>
-          </SafeAreaView>
-
-          {/* Center Transparent Oval Guide */}
+          {/* Center Precision Oval Guide (single focal point) */}
           <View
             style={styles.ovalStage}
             pointerEvents="none"
@@ -732,168 +723,130 @@ export default function FaceScanModal({
               ovalStageLayoutRef.current = e.nativeEvent.layout;
             }}
           >
-            <Animated.View
+            <View
+              style={styles.ovalFrameWrap}
               onLayout={(e) => {
                 ovalBoxLayoutRef.current = e.nativeEvent.layout;
               }}
-              style={[
-                styles.oval,
-                {
-                  borderColor: ovalBorderColor,
-                  transform: [{ scale: pulseAnim }],
-                },
-              ]}
             >
-              {isScanningAnimActive && (
+              {isRingActive && (
                 <Animated.View
                   style={[
-                    styles.scanLine,
+                    styles.ovalOuterRing,
                     {
-                      backgroundColor: scanStatus === 'locked' ? '#22C55E' : '#38BDF8',
-                      transform: [{ translateY: scanLineAnim }],
+                      borderColor: scanStatus === 'locked' ? '#10B981' : '#FFFFFF',
+                      opacity: ringOpacityAnim,
                     },
                   ]}
                 />
               )}
 
-              <View style={[styles.corner, styles.cTL]} />
-              <View style={[styles.corner, styles.cTR]} />
-              <View style={[styles.corner, styles.cBL]} />
-              <View style={[styles.corner, styles.cBR]} />
-
-              {scanStatus === 'success' && (
-                <View style={styles.centerIconOverlay}>
-                  <Ionicons name="checkmark-circle" size={72} color="#10B981" />
-                </View>
-              )}
-              {scanStatus === 'error' && (
-                <View style={styles.centerIconOverlayError}>
-                  <Ionicons name="close-circle" size={64} color="#EF4444" />
-                </View>
-              )}
-            </Animated.View>
-
-            <View style={styles.hintPill}>
-              <Text style={styles.ovalHint}>
-                {mountError
-                  ? mountError
-                  : !isCameraReady
-                  ? 'Starting camera...'
-                  : hasNativeMlKit && !autoScanPaused
-                  ? 'Align your face within the frame'
-                  : 'Center your face inside the oval'}
-              </Text>
+              <View
+                style={[
+                  styles.oval,
+                  {
+                    borderColor: ovalBorderColor,
+                  },
+                ]}
+              >
+                {scanStatus === 'success' && (
+                  <View style={styles.centerFeedbackSuccess}>
+                    <View style={styles.feedbackBadgeSuccess}>
+                      <Ionicons name="checkmark" size={38} color="#FFFFFF" />
+                    </View>
+                  </View>
+                )}
+                {scanStatus === 'error' && (
+                  <View style={styles.centerFeedbackError}>
+                    <View style={styles.feedbackBadgeError}>
+                      <Ionicons name="close" size={34} color="#FFFFFF" />
+                    </View>
+                  </View>
+                )}
+              </View>
             </View>
           </View>
 
-          {/* Bottom Control Panel */}
-          <SafeAreaView style={styles.footerSafe} edges={['bottom']}>
-            <View style={styles.footer}>
-              <View
-                style={[
-                  styles.statusRow,
-                  scanStatus === 'error' && styles.statusRowError,
-                  (scanStatus === 'success' || scanStatus === 'locked') && styles.statusRowSuccess,
-                ]}
-              >
-                {isProcessing || (hasNativeMlKit && isCameraReady && !autoScanPaused && scanStatus !== 'error' && scanStatus !== 'success') ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={scanStatus === 'locked' ? '#22C55E' : '#EA580C'}
-                    style={{ marginRight: 10 }}
-                  />
-                ) : (
-                  <Ionicons
-                    name={
-                      scanStatus === 'success'
-                        ? 'checkmark-circle'
-                        : scanStatus === 'error'
-                        ? 'alert-circle'
-                        : 'scan-outline'
-                    }
-                    size={20}
-                    color={
-                      scanStatus === 'success'
-                        ? '#10B981'
-                        : scanStatus === 'error'
-                        ? '#EF4444'
-                        : '#EA580C'
-                    }
-                    style={{ marginRight: 10 }}
-                  />
-                )}
-                <Text
-                  style={[
-                    styles.statusText,
-                    scanStatus === 'error' && { color: '#FCA5A5' },
-                    (scanStatus === 'success' || scanStatus === 'locked') && { color: '#6EE7B7' },
-                  ]}
-                  numberOfLines={3}
-                >
-                  {statusMessage}
-                </Text>
-              </View>
-
-              {/* Show Resume button if auto-scan timed out, or manual button only if ML Kit unavailable */}
-              {hasNativeMlKit && !autoScanPaused ? (
-                <View style={styles.autoIndicatorBar}>
-                  <MaterialCommunityIcons
-                    name={mode === 'register' ? 'face-recognition' : 'shield-check-outline'}
-                    size={18}
-                    color="#10B981"
-                    style={{ marginRight: 8 }}
-                  />
-                  <Text style={styles.autoIndicatorText}>
-                    {isProcessing
-                      ? 'Verifying...'
-                      : 'Automatic capture enabled'}
+          {/* Soft bottom edge-fade scrim + single clear status & control */}
+          <LinearGradient
+            colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.48)', 'rgba(0, 0, 0, 0.84)']}
+            locations={[0, 0.35, 1]}
+            style={styles.bottomScrim}
+            pointerEvents="box-none"
+          >
+            <SafeAreaView edges={['bottom']}>
+              <View style={styles.footer}>
+                {/* Single clean live instruction line */}
+                <View style={styles.promptRow}>
+                  {isProcessing ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                  ) : scanStatus === 'error' ? (
+                    <Ionicons name="alert-circle" size={18} color="#F87171" style={{ marginRight: 7 }} />
+                  ) : scanStatus === 'success' ? (
+                    <Ionicons name="checkmark-circle" size={18} color="#34D399" style={{ marginRight: 7 }} />
+                  ) : null}
+                  <Text
+                    style={[
+                      styles.promptText,
+                      scanStatus === 'error' && styles.promptTextError,
+                      scanStatus === 'success' && styles.promptTextSuccess,
+                    ]}
+                    numberOfLines={2}
+                  >
+                    {mountError
+                      ? mountError
+                      : !isCameraReady
+                      ? 'Starting camera...'
+                      : statusMessage}
                   </Text>
                 </View>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.captureBtn,
-                    (isProcessing || !isCameraReady) && styles.captureBtnDisabled,
-                  ]}
-                  onPress={
-                    hasNativeMlKit
-                      ? () => {
-                          setAutoScanPaused(false);
-                          setScanStatus('idle');
-                          setStatusMessage('Position your face inside the oval');
-                        }
-                      : handleManualCapture
-                  }
-                  disabled={isProcessing || !isCameraReady}
-                  activeOpacity={0.85}
-                >
-                  <MaterialCommunityIcons
-                    name={mode === 'register' ? 'face-recognition' : 'shield-account'}
-                    size={22}
-                    color="#FFFFFF"
-                    style={{ marginRight: 10 }}
-                  />
-                  <Text style={styles.captureBtnText}>
-                    {!isCameraReady
-                      ? 'Starting Camera...'
-                      : hasNativeMlKit
-                      ? 'Resume Auto-Scan'
-                      : mode === 'register'
-                      ? 'Capture & Register Face'
-                      : 'Verify Face & Check-IN'}
-                  </Text>
-                </TouchableOpacity>
-              )}
 
-              <TouchableOpacity
-                style={styles.cancelLink}
-                onPress={handleModalClose}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.cancelText}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </SafeAreaView>
+                {/* Quiet mode caption when auto-scanning, or crisp primary button if paused/manual */}
+                {hasNativeMlKit && !autoScanPaused ? (
+                  <Text style={styles.subtleCaption}>
+                    {isProcessing ? 'Checking identity' : 'Captures automatically when aligned'}
+                  </Text>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.primaryBtn,
+                      (isProcessing || !isCameraReady) && styles.primaryBtnDisabled,
+                    ]}
+                    onPress={
+                      hasNativeMlKit
+                        ? () => {
+                            setAutoScanPaused(false);
+                            setScanStatus('idle');
+                            setStatusMessage('Position your face inside the oval');
+                          }
+                        : handleManualCapture
+                    }
+                    disabled={isProcessing || !isCameraReady}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.primaryBtnText}>
+                      {!isCameraReady
+                        ? 'Starting Camera...'
+                        : hasNativeMlKit
+                        ? 'Resume Scan'
+                        : mode === 'register'
+                        ? 'Register Face'
+                        : 'Verify & Check In'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                <TouchableOpacity
+                  style={styles.cancelLink}
+                  onPress={handleModalClose}
+                  hitSlop={{ top: 10, bottom: 10, left: 24, right: 24 }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </SafeAreaView>
+          </LinearGradient>
         </View>
       )}
     </View>
@@ -920,143 +873,113 @@ const styles = StyleSheet.create({
   // Permission / Loading Fallback
   fallbackView: {
     flex: 1,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#09090B',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  permIconCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: 'rgba(234, 88, 12, 0.14)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(234, 88, 12, 0.35)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 18,
+    paddingHorizontal: 36,
   },
   permTitle: {
     fontSize: 20,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#FFFFFF',
-    marginBottom: 10,
+    letterSpacing: -0.3,
+    marginBottom: 8,
     textAlign: 'center',
   },
   permSubtitle: {
     fontSize: 14,
-    color: '#94A3B8',
+    color: 'rgba(255, 255, 255, 0.64)',
     textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: 24,
-    marginTop: 8,
+    lineHeight: 21,
+    marginBottom: 28,
+    marginTop: 4,
   },
   allowBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#EA580C',
     paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    minWidth: 180,
+    alignItems: 'center',
   },
   allowBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '700',
+    fontWeight: '600',
   },
 
-  // Header
-  headerSafe: {
-    backgroundColor: 'rgba(15, 23, 42, 0.78)',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+  // Floating Top Scrim & Header
+  topScrim: {
+    paddingBottom: 28,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 12 : 6,
   },
-  iconBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+  circleBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  headerMid: {
+  circleBtnDim: {
+    opacity: 0.45,
+  },
+  headerCenter: {
     flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 12,
   },
   headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '600',
     color: '#FFFFFF',
+    letterSpacing: -0.3,
   },
   headerSub: {
-    fontSize: 12,
-    color: '#CBD5E1',
+    fontSize: 13,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.72)',
     marginTop: 2,
   },
-  liveBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.18)',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.4)',
-  },
-  liveDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#10B981',
-    marginRight: 5,
-  },
-  liveText: {
-    color: '#10B981',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
 
-  // Center Oval Stage
+  // Center Precision Oval Stage
   ovalStage: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  ovalFrameWrap: {
+    width: OVAL_WIDTH,
+    height: OVAL_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  ovalOuterRing: {
+    position: 'absolute',
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    borderRadius: (OVAL_WIDTH + 20) / 2,
+    borderWidth: 2,
+  },
   oval: {
     width: OVAL_WIDTH,
     height: OVAL_HEIGHT,
     borderRadius: OVAL_WIDTH / 2,
-    borderWidth: 3,
-    borderColor: '#EA580C',
+    borderWidth: 2.5,
+    borderColor: 'rgba(255, 255, 255, 0.88)',
     backgroundColor: 'transparent',
   },
-  scanLine: {
-    position: 'absolute',
-    left: 10,
-    right: 10,
-    top: 0,
-    height: 3,
-    backgroundColor: '#38BDF8',
-    borderRadius: 2,
-  },
-  corner: {
-    position: 'absolute',
-    width: 22,
-    height: 22,
-    borderColor: '#FFFFFF',
-  },
-  cTL: { top: 22, left: 22, borderTopWidth: 3, borderLeftWidth: 3, borderTopLeftRadius: 6 },
-  cTR: { top: 22, right: 22, borderTopWidth: 3, borderRightWidth: 3, borderTopRightRadius: 6 },
-  cBL: { bottom: 22, left: 22, borderBottomWidth: 3, borderLeftWidth: 3, borderBottomLeftRadius: 6 },
-  cBR: { bottom: 22, right: 22, borderBottomWidth: 3, borderRightWidth: 3, borderBottomRightRadius: 6 },
-  centerIconOverlay: {
+  centerFeedbackSuccess: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -1064,10 +987,10 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(16, 185, 129, 0.16)',
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
     borderRadius: OVAL_WIDTH / 2,
   },
-  centerIconOverlayError: {
+  centerFeedbackError: {
     position: 'absolute',
     top: 0,
     left: 0,
@@ -1075,107 +998,95 @@ const styles = StyleSheet.create({
     bottom: 0,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.14)',
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
     borderRadius: OVAL_WIDTH / 2,
   },
-  hintPill: {
-    marginTop: 14,
-    backgroundColor: 'rgba(15, 23, 42, 0.68)',
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 16,
+  feedbackBadgeSuccess: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#10B981',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  ovalHint: {
-    color: '#F8FAFC',
-    fontSize: 13,
-    fontWeight: '600',
-    textAlign: 'center',
+  feedbackBadgeError: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(239, 68, 68, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
-  // Bottom Footer
-  footerSafe: {
-    backgroundColor: 'rgba(15, 23, 42, 0.88)',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  // Soft Bottom Scrim & Controls
+  bottomScrim: {
+    paddingTop: 36,
   },
   footer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 10 : 18,
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === 'ios' ? 12 : 22,
     alignItems: 'center',
   },
-  statusRow: {
+  promptRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
-    paddingVertical: 11,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    marginBottom: 14,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    marginBottom: 8,
   },
-  statusRowError: {
-    borderColor: 'rgba(239, 68, 68, 0.6)',
-    backgroundColor: 'rgba(127, 29, 29, 0.45)',
-  },
-  statusRowSuccess: {
-    borderColor: 'rgba(16, 185, 129, 0.6)',
-    backgroundColor: 'rgba(6, 78, 59, 0.45)',
-  },
-  statusText: {
-    color: '#E2E8F0',
-    fontSize: 13,
+  promptText: {
+    fontSize: 16,
     fontWeight: '600',
-    flex: 1,
-    lineHeight: 18,
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    textAlign: 'center',
+    lineHeight: 22,
+    textShadowColor: 'rgba(0, 0, 0, 0.65)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
-  autoIndicatorBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    paddingVertical: 13,
-    paddingHorizontal: 14,
-    borderRadius: 14,
-    backgroundColor: 'rgba(16, 185, 129, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.32)',
+  promptTextError: {
+    color: '#FCA5A5',
   },
-  autoIndicatorText: {
-    color: '#A7F3D0',
-    fontSize: 13.5,
-    fontWeight: '700',
-    letterSpacing: 0.2,
+  promptTextSuccess: {
+    color: '#6EE7B7',
   },
-  captureBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  subtleCaption: {
+    fontSize: 12.5,
+    fontWeight: '400',
+    color: 'rgba(255, 255, 255, 0.58)',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  primaryBtn: {
     backgroundColor: '#EA580C',
     width: '100%',
-    paddingVertical: 15,
-    borderRadius: 14,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 8,
   },
-  captureBtnDisabled: {
-    opacity: 0.55,
+  primaryBtnDisabled: {
+    opacity: 0.5,
   },
-  captureBtnText: {
+  primaryBtnText: {
     color: '#FFFFFF',
     fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: '600',
+    letterSpacing: -0.1,
   },
   cancelLink: {
-    marginTop: 10,
-    paddingVertical: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cancelText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '600',
+    color: 'rgba(255, 255, 255, 0.72)',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
