@@ -1,6 +1,7 @@
 // API Service for connecting Expo frontend to deployed Node.js backend on Render
 // export const API_BASE_URL = 'https://attendance-bz3l.onrender.com/api';
  export const API_BASE_URL = 'http://192.168.1.8:5001/api';
+  // export const API_BASE_URL = 'https://5001-agq66e35zde43zf4nyoxgptola.instabox.tech/api';
 
 
 export const api = {
@@ -272,6 +273,21 @@ export const api = {
       return await res.json();
     } catch (error) {
       console.error('API updateLeaveStatus error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  // Test trigger for HR leave notification
+  triggerTestHRLeaveNotification: async (payload = {}) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/leave/test-hr-notification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API triggerTestHRLeaveNotification error:', error);
       return { success: false, error: 'Network error: could not connect to server' };
     }
   },

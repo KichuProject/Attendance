@@ -20,8 +20,8 @@ export default function LeaveTabSection({
   loadLeaveRequests,
   handleUpdateStatus,
   // Employee props
-  leaveWallet = { remainingDays: 12, approvedDays: 0, pendingDays: 0 },
-  TOTAL_LEAVE_ALLOWANCE = 12,
+  leaveWallet = { total: 15, remainingDays: 15, approvedDays: 0, pendingDays: 0, percentUsed: 0 },
+  TOTAL_LEAVE_ALLOWANCE = 15,
   loadMyLeaveRequests,
   isMyLeaveLoading,
   employeeLeaveTab = 'apply',
@@ -534,9 +534,16 @@ export default function LeaveTabSection({
 
           {/* Submit Button */}
           <TouchableOpacity
-            style={styles.leaveSubmitButton}
-            onPress={handleLeaveSubmit}
-            disabled={leaveSubmitting}
+            style={[styles.leaveSubmitButton, leaveSubmitting && { opacity: 0.7 }]}
+            onPress={() => {
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              } catch (_h) {}
+              if (typeof handleLeaveSubmit === 'function') {
+                handleLeaveSubmit();
+              }
+            }}
+            disabled={Boolean(leaveSubmitting)}
             activeOpacity={0.85}
           >
             {leaveSubmitting ? (

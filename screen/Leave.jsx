@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,7 +36,7 @@ export default function Leave({
   let displayName = user?.name || user?.username || 'Employee';
   displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
-  const TOTAL_LEAVE_ALLOWANCE = 5; // 5-day annual quota policy
+  const TOTAL_LEAVE_ALLOWANCE = 15; // 15-day annual quota policy
 
   // ── Employee Leave Request Form State ──
   const [employeeLeaveTab, setEmployeeLeaveTab] = useState('apply'); // 'apply' | 'myLeaves'
@@ -46,6 +47,13 @@ export default function Leave({
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const [myLeaveRequests, setMyLeaveRequests] = useState([]);
   const [isMyLeaveLoading, setIsMyLeaveLoading] = useState(false);
+  const [leaveWallet, setLeaveWallet] = useState({
+    total: 15,
+    approvedDays: 0,
+    pendingDays: 0,
+    remainingDays: 15,
+    percentUsed: 0,
+  });
 
   const leaveTypes = ['Casual Leave', 'Sick Leave', 'Emergency Leave'];
 
@@ -182,31 +190,9 @@ export default function Leave({
     return p.getFullYear() === cYear && p.getMonth() === cMonth && p.getDate() === dayNum;
   };
 
-  // Load employee's own leave requests
-  const loadMyLeaveRequests = async () => {
-    if (!user?.id) return;
-    setIsMyLeaveLoading(true);
-    try {
-      const res = await api.getUserLeaveRequests(user.id);
-      if (res.success && Array.isArray(res.requests)) {
-        setMyLeaveRequests(res.requests);
-      }
-    } catch (err) {
-      console.error('Fetch my leave requests error:', err);
-    } finally {
-      setIsMyLeaveLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (user?.id) {
-      loadMyLeaveRequests();
-    }
-  }, [user?.id]);
-
-  // Unified Leave Balance calculation (5 Days Total Quota)
-  const calculateLeaveWallet = () => {
-    const list = myLeaveRequests || [];
+  // Unified Leave Balance fallback calculation (15 Days Total Quota)
+  const calculateLeaveWallet = (customList) => {
+    const list = customList || myLeaveRequests || [];
     let approvedDays = 0;
     let pendingDays = 0;
 
@@ -219,9 +205,9 @@ export default function Leave({
           : 1;
 
       if (req.status === 'Approved') {
-        approvedDays += count;
+        approvedDays += 1;
       } else if (req.status === 'Pending') {
-        pendingDays += count;
+        pendingDays += 1;
       }
     });
 
@@ -237,11 +223,60 @@ export default function Leave({
     };
   };
 
-  const leaveWallet = calculateLeaveWallet();
+  // Load employee's own leave requests directly from DB
+  const loadMyLeaveRequests = async () => {
+    if (!user?.id) return;
+    setIsMyLeaveLoading(true);
+    try {
+      const res = await api.getUserLeaveRequests(user.id);
+      if (res.success) {
+        if (Array.isArray(res.requests)) {
+          setMyLeaveRequests(res.requests);
+        }
+        if (res.wallet) {
+          setLeaveWallet(res.wallet);
+        } else if (Array.isArray(res.requests)) {
+          setLeaveWallet(calculateLeaveWallet(res.requests));
+        }
+      }
+    } catch (err) {
+      console.error('Fetch my leave requests error:', err);
+    } finally {
+      setIsMyLeaveLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (user?.id) {
+      loadMyLeaveRequests();
+    }
+  }, [user?.id]);
 
   const handleLeaveSubmit = async () => {
-    if (!leaveFrom.trim() || !leaveTo.trim() || !leaveReason.trim()) {
-      Alert.alert('Incomplete', 'Please fill in all leave request fields.');
+    try {
+      Keyboard.dismiss();
+    } catch (_k) {}
+
+    console.log('[Leave Submit Clicked]', {
+      leaveFrom,
+      leaveTo,
+      leaveReason,
+      leaveSubmitting,
+      remainingDays: leaveWallet?.remainingDays,
+    });
+
+    if (!leaveFrom || !leaveFrom.trim()) {
+      Alert.alert('Missing Date', 'Please select a From Date.');
+      return;
+    }
+
+    if (!leaveTo || !leaveTo.trim()) {
+      Alert.alert('Missing Date', 'Please select a To Date.');
+      return;
+    }
+
+    if (!leaveReason || !leaveReason.trim()) {
+      Alert.alert('Missing Reason', 'Please enter a brief reason for your leave.');
       return;
     }
 
@@ -268,7 +303,7 @@ export default function Leave({
     if (requestedDays > leaveWallet.remainingDays) {
       Alert.alert(
         'Leave Quota Exceeded',
-        `You have ${leaveWallet.remainingDays} days remaining out of your 5-day quota, but this request is for ${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}. Please adjust your dates.`
+        `You have ${leaveWallet.remainingDays} days remaining out of your ${TOTAL_LEAVE_ALLOWANCE}-day quota, but this request is for ${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}. Please adjust your dates.`
       );
       return;
     }
@@ -285,23 +320,32 @@ export default function Leave({
         reason: leaveReason.trim(),
       };
 
-      await api.submitLeave(payload);
+      console.log('[Leave Submitting Payload]', payload);
+      const res = await api.submitLeave(payload);
+      console.log('[Leave Submit API Response]', res);
 
-      if (addLeaveRequest) {
-        addLeaveRequest(payload);
+      if (!res || !res.success) {
+        Alert.alert(
+          'Submission Failed',
+          res?.error || 'Could not connect to backend server. Please verify your backend server is running on port 5001.'
+        );
+        return;
       }
 
       setLeaveFrom('');
       setLeaveTo('');
       setLeaveReason('');
       setLeaveType('Sick Leave');
+
+      // ── IMMEDIATELY REFETCH FROM DB AND RE-RENDER LEAVE BALANCE ABOVE ──
       if (user?.id) {
-        loadMyLeaveRequests();
+        await loadMyLeaveRequests();
       }
-      Alert.alert('Submitted', 'Your leave request has been submitted successfully.');
+
+      Alert.alert('Submitted', 'Your leave request has been submitted successfully and HR has been notified.');
     } catch (err) {
       console.error('Leave submission error:', err);
-      Alert.alert('Notice', 'Leave request recorded.');
+      Alert.alert('Submission Error', err?.message || 'Failed to submit leave request.');
     } finally {
       setLeaveSubmitting(false);
     }
@@ -329,6 +373,7 @@ export default function Leave({
 
       <ScrollView
         contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         <LeaveTabSection
@@ -430,6 +475,6 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
-    paddingBottom: 100,
+    paddingBottom: 140,
   },
 });

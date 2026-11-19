@@ -28,7 +28,7 @@ export default function AttendanceKpiCard({ totalDays, todayStatus }) {
           <View style={styles.kpiIconBoxStatus}>
             <Ionicons name="pulse" size={13} color={THEME.colors.success} />
           </View>
-          <Text style={styles.label}>TODAY'S STATUS</Text>
+          <Text style={styles.label}>{"TODAY'S STATUS"}</Text>
         </View>
         <View
           style={[

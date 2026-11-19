@@ -13,6 +13,7 @@ import {
   Pressable,
   Platform,
   BackHandler,
+  Keyboard,
   ToastAndroid,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -199,6 +200,8 @@ const resolveAreaName = async (lat, lon) => {
 };
 
 export default function Home({
+  navigation,
+  onBack,
   user,
   onLogout,
   onNavigateReport,
@@ -410,8 +413,8 @@ export default function Home({
   // Active Tab: 'attendance' or 'leave'
   const [activeTab, setActiveTab] = useState('attendance');
 
-  // Unified Total Leave Quota (5 Days Total)
-  const TOTAL_LEAVE_ALLOWANCE = 5;
+  // Unified Total Leave Quota (Standard 15 Days Annual)
+  const TOTAL_LEAVE_ALLOWANCE = 15;
 
   // Leave Request Form State
   const leaveTypes = ['Sick Leave', 'Casual Leave', 'Emergency Leave', 'Other'];
@@ -425,6 +428,13 @@ export default function Home({
   const [employeeLeaveTab, setEmployeeLeaveTab] = useState('apply');
   const [myLeaveRequests, setMyLeaveRequests] = useState(null);
   const [isMyLeaveLoading, setIsMyLeaveLoading] = useState(false);
+  const [leaveWallet, setLeaveWallet] = useState({
+    total: 15,
+    approvedDays: 0,
+    pendingDays: 0,
+    remainingDays: 15,
+    percentUsed: 0,
+  });
 
   // Calendar Picker for Leave Form
   const [calendarVisible, setCalendarVisible] = useState(false);
@@ -435,6 +445,11 @@ export default function Home({
   useEffect(() => {
     let lastBackPress = 0;
     const onHardwareBackPress = () => {
+      // If Home is not currently focused, let the active screen handle back press
+      if (navigation && typeof navigation.isFocused === 'function' && !navigation.isFocused()) {
+        return false;
+      }
+
       // 1. If any modal is open, close it first
       if (mappingModalVisible) {
         setMappingModalVisible(false);
@@ -449,7 +464,17 @@ export default function Home({
         return true;
       }
 
-      // 2. Double-tap to exit prevention
+      // 2. If there are previous screens in history, navigate back to the last screen
+      if (navigation && typeof navigation.canGoBack === 'function' && navigation.canGoBack()) {
+        navigation.goBack();
+        return true;
+      }
+      if (typeof onBack === 'function') {
+        onBack();
+        return true;
+      }
+
+      // 3. Double-tap to exit prevention (only at the root screen)
       const currentTime = Date.now();
       if (currentTime - lastBackPress < 2000) {
         BackHandler.exitApp();
@@ -672,14 +697,54 @@ export default function Home({
     return p.getFullYear() === cYear && p.getMonth() === cMonth && p.getDate() === dayNum;
   };
 
-  // Load employee's own leave requests
+  // Unified Leave Balance fallback calculation (15 Days Total Quota)
+  const calculateLeaveWallet = (customList) => {
+    const list = customList || myLeaveRequests || [];
+    let approvedDays = 0;
+    let pendingDays = 0;
+
+    list.forEach((req) => {
+      const fromD = parseDate(req.from || req.from_date);
+      const toD = parseDate(req.to || req.to_date);
+      const count =
+        fromD && toD
+          ? Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / (1000 * 60 * 60 * 24)) + 1)
+          : 1;
+
+      if (req.status === 'Approved') {
+        approvedDays += 1;
+      } else if (req.status === 'Pending') {
+        pendingDays += 1;
+      }
+    });
+
+    const remainingDays = Math.max(0, TOTAL_LEAVE_ALLOWANCE - approvedDays - pendingDays);
+    const percentUsed = Math.min(100, Math.round(((approvedDays + pendingDays) / TOTAL_LEAVE_ALLOWANCE) * 100));
+
+    return {
+      total: TOTAL_LEAVE_ALLOWANCE,
+      approvedDays,
+      pendingDays,
+      remainingDays,
+      percentUsed,
+    };
+  };
+
+  // Load employee's own leave requests directly from DB
   const loadMyLeaveRequests = async () => {
     if (!user?.id) return;
     setIsMyLeaveLoading(true);
     try {
       const res = await api.getUserLeaveRequests(user.id);
-      if (res.success && Array.isArray(res.requests)) {
-        setMyLeaveRequests(res.requests);
+      if (res.success) {
+        if (Array.isArray(res.requests)) {
+          setMyLeaveRequests(res.requests);
+        }
+        if (res.wallet) {
+          setLeaveWallet(res.wallet);
+        } else if (Array.isArray(res.requests)) {
+          setLeaveWallet(calculateLeaveWallet(res.requests));
+        }
       }
     } catch (err) {
       console.error('Fetch my leave requests error:', err);
@@ -699,42 +764,6 @@ export default function Home({
       loadMyLeaveRequests();
     }
   }, [isHR, activeTab, employeeLeaveTab]);
-
-  // Unified Leave Balance calculation (5 Days Total Quota)
-  const calculateLeaveWallet = () => {
-    const list = myLeaveRequests || [];
-    let approvedDays = 0;
-    let pendingDays = 0;
-
-    list.forEach((req) => {
-      const fromD = parseDate(req.from || req.from_date);
-      const toD = parseDate(req.to || req.to_date);
-      const count =
-        fromD && toD
-          ? Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / (1000 * 60 * 60 * 24)) + 1)
-          : 1;
-
-      if (req.status === 'Approved') {
-        approvedDays += count;
-      } else if (req.status === 'Pending') {
-        pendingDays += count;
-      }
-    });
-
-    // Available Days = Total Quota minus Approved minus Pending (reserved)
-    const remainingDays = Math.max(0, TOTAL_LEAVE_ALLOWANCE - approvedDays - pendingDays);
-    const percentUsed = Math.min(100, Math.round(((approvedDays + pendingDays) / TOTAL_LEAVE_ALLOWANCE) * 100));
-
-    return {
-      total: TOTAL_LEAVE_ALLOWANCE,
-      approvedDays,
-      pendingDays,
-      remainingDays,
-      percentUsed,
-    };
-  };
-
-  const leaveWallet = calculateLeaveWallet();
 
   // DB leave requests for HR
   const [dbLeaveRequests, setDbLeaveRequests] = useState(null);
@@ -756,7 +785,7 @@ export default function Home({
   };
 
   useEffect(() => {
-    if (isHR && activeTab === 'leave') {
+    if (isHR) {
       loadLeaveRequests();
     }
   }, [isHR, activeTab]);
@@ -1350,6 +1379,33 @@ export default function Home({
       return;
     }
 
+    try {
+      Keyboard.dismiss();
+    } catch (_k) {}
+
+    console.log('[Home Leave Submit Clicked]', {
+      leaveFrom,
+      leaveTo,
+      leaveReason,
+      leaveSubmitting,
+      remainingDays: leaveWallet?.remainingDays,
+    });
+
+    if (!leaveFrom || !leaveFrom.trim()) {
+      Alert.alert('Missing Date', 'Please select a From Date.');
+      return;
+    }
+
+    if (!leaveTo || !leaveTo.trim()) {
+      Alert.alert('Missing Date', 'Please select a To Date.');
+      return;
+    }
+
+    if (!leaveReason || !leaveReason.trim()) {
+      Alert.alert('Missing Reason', 'Please enter a brief reason for your leave.');
+      return;
+    }
+
     const today = getTodayMidnight();
     const fromD = parseDate(leaveFrom);
     const toD = parseDate(leaveTo);
@@ -1373,7 +1429,7 @@ export default function Home({
     if (requestedDays > leaveWallet.remainingDays) {
       Alert.alert(
         'Leave Quota Exceeded',
-        `You have ${leaveWallet.remainingDays} days remaining out of your 5-day quota, but this request is for ${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}. Please adjust your dates.`
+        `You have ${leaveWallet.remainingDays} days remaining out of your ${TOTAL_LEAVE_ALLOWANCE}-day quota, but this request is for ${requestedDays} ${requestedDays === 1 ? 'day' : 'days'}. Please adjust your dates.`
       );
       return;
     }
@@ -1390,23 +1446,29 @@ export default function Home({
         reason: leaveReason.trim(),
       };
 
-      await api.submitLeave(payload);
+      console.log('[Home Leave Submitting Payload]', payload);
+      const res = await api.submitLeave(payload);
+      console.log('[Home Leave Submit API Response]', res);
 
-      if (addLeaveRequest) {
-        addLeaveRequest(payload);
+      if (!res || !res.success) {
+        Alert.alert('Submission Failed', res?.error || 'Could not connect to backend server. Please verify your backend server is running on port 5001.');
+        return;
       }
 
       setLeaveFrom('');
       setLeaveTo('');
       setLeaveReason('');
       setLeaveType('Sick Leave');
+
+      // ── IMMEDIATELY REFETCH FROM DB AND RE-RENDER LEAVE BALANCE ABOVE ──
       if (user?.id) {
-        loadMyLeaveRequests();
+        await loadMyLeaveRequests();
       }
-      Alert.alert('Submitted', 'Your leave request has been submitted successfully.');
+
+      Alert.alert('Submitted', 'Your leave request has been submitted successfully and HR has been notified.');
     } catch (err) {
       console.error('Leave submission error:', err);
-      Alert.alert('Notice', 'Leave request recorded.');
+      Alert.alert('Submission Error', err?.message || 'Failed to submit leave request.');
     } finally {
       setLeaveSubmitting(false);
     }
@@ -1432,11 +1494,30 @@ export default function Home({
       <SafeAreaView style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
         {/* Top Executive Brand & Logout Bar */}
         <View style={styles.topBrandRow}>
           <View style={styles.brandLeftRow}>
+            {Boolean(navigation?.canGoBack?.()) && (
+              <TouchableOpacity
+                onPress={() => (onBack ? onBack() : navigation.goBack())}
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  backgroundColor: '#F1F5F9',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 8,
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name="chevron-back" size={22} color="#0F172A" />
+              </TouchableOpacity>
+            )}
             <View style={styles.brandLogoBox}>
               <Image
                 source={require('../assets/logo.png')}
@@ -1573,7 +1654,7 @@ export default function Home({
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isHR={isHR}
-        pendingLeavesCount={isHR ? (dbLeaveRequests || []).filter((r) => r.status === 'Pending').length : 0}
+        pendingLeavesCount={isHR && dbLeaveRequests ? dbLeaveRequests.filter((r) => r.status === 'Pending').length : undefined}
         onOpenSettings={onNavigateSettings}
         onNavigateHome={() => setActiveTab('attendance')}
         onNavigateTeam={onNavigateTeam}

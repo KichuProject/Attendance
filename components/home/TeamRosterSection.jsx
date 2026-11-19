@@ -50,7 +50,7 @@ export default function TeamRosterSection({
         <View style={styles.teamKpiHeader}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="pulse-outline" size={16} color={THEME.colors.primary} />
-            <Text style={styles.teamKpiTitle}>Today's Team Presence</Text>
+            <Text style={styles.teamKpiTitle}>{"Today's Team Presence"}</Text>
           </View>
           <TouchableOpacity
             onPress={loadTeamSummary}

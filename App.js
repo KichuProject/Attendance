@@ -57,6 +57,19 @@ function AuthStackScreen({ onLogin, onRegister }) {
   );
 }
 
+function pushScreen(navigation, targetRoute, params = {}) {
+  if (!navigation) return;
+  const state = navigation.getState?.();
+  const currentRoute = state?.routes?.[state?.index]?.name;
+  if (currentRoute === targetRoute) return;
+
+  if (typeof navigation.push === 'function') {
+    navigation.push(targetRoute, params);
+  } else {
+    navigation.navigate(targetRoute, params);
+  }
+}
+
 function AppStackScreen({
   userData,
   onLogout,
@@ -69,7 +82,8 @@ function AppStackScreen({
     <AppStack.Navigator
       screenOptions={{
         headerShown: false,
-        animation: 'slide_from_right',
+        animation: 'fade',
+        animationDuration: 180,
         contentStyle: { backgroundColor: '#F8FAFC' },
       }}
     >
@@ -79,22 +93,23 @@ function AppStackScreen({
             {...props}
             user={userData}
             onLogout={onLogout}
+            onBack={() => props.navigation.goBack()}
             onNavigateReport={(targetEmp) => {
-              props.navigation.navigate('Report', {
+              pushScreen(props.navigation, 'Report', {
                 initialEmployee: targetEmp || null,
               });
             }}
             onNavigateSettings={() => {
-              props.navigation.navigate('Settings');
+              pushScreen(props.navigation, 'Settings');
             }}
             onNavigateTeam={() => {
-              props.navigation.navigate('Team');
+              pushScreen(props.navigation, 'Team');
             }}
             onNavigateLeave={() => {
-              props.navigation.navigate('Leave');
+              pushScreen(props.navigation, 'Leave');
             }}
             onNavigateApprovals={() => {
-              props.navigation.navigate('Approvals');
+              pushScreen(props.navigation, 'Approvals');
             }}
             records={attendanceRecords}
             setRecords={setAttendanceRecords}
@@ -111,10 +126,10 @@ function AppStackScreen({
             leaveRequests={leaveRequests}
             addLeaveRequest={addLeaveRequest}
             onBack={() => props.navigation.goBack()}
-            onNavigateHome={() => props.navigation.navigate('Home')}
-            onNavigateTeam={() => props.navigation.navigate('Team')}
-            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
-            onNavigateSettings={() => props.navigation.navigate('Settings')}
+            onNavigateHome={() => pushScreen(props.navigation, 'Home')}
+            onNavigateTeam={() => pushScreen(props.navigation, 'Team')}
+            onNavigateApprovals={() => pushScreen(props.navigation, 'Approvals')}
+            onNavigateSettings={() => pushScreen(props.navigation, 'Settings')}
           />
         )}
       </AppStack.Screen>
@@ -124,15 +139,15 @@ function AppStackScreen({
             {...props}
             user={userData}
             onNavigateReport={(targetEmp) => {
-              props.navigation.navigate('Report', {
+              pushScreen(props.navigation, 'Report', {
                 initialEmployee: targetEmp || null,
               });
             }}
             onBack={() => props.navigation.goBack()}
-            onNavigateHome={() => props.navigation.navigate('Home')}
-            onNavigateLeave={() => props.navigation.navigate('Leave')}
-            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
-            onNavigateSettings={() => props.navigation.navigate('Settings')}
+            onNavigateHome={() => pushScreen(props.navigation, 'Home')}
+            onNavigateLeave={() => pushScreen(props.navigation, 'Leave')}
+            onNavigateApprovals={() => pushScreen(props.navigation, 'Approvals')}
+            onNavigateSettings={() => pushScreen(props.navigation, 'Settings')}
           />
         )}
       </AppStack.Screen>
@@ -143,14 +158,14 @@ function AppStackScreen({
             user={userData}
             leaveRequests={leaveRequests}
             onBack={() => props.navigation.goBack()}
-            onNavigateHome={() => props.navigation.navigate('Home')}
-            onNavigateTeam={() => props.navigation.navigate('Team')}
-            onNavigateLeave={() => props.navigation.navigate('Leave')}
-            onNavigateSettings={() => props.navigation.navigate('Settings')}
+            onNavigateHome={() => pushScreen(props.navigation, 'Home')}
+            onNavigateTeam={() => pushScreen(props.navigation, 'Team')}
+            onNavigateLeave={() => pushScreen(props.navigation, 'Leave')}
+            onNavigateSettings={() => pushScreen(props.navigation, 'Settings')}
           />
         )}
       </AppStack.Screen>
-      <AppStack.Screen name="Report">
+      <AppStack.Screen name="Report" options={{ animation: 'slide_from_right' }}>
         {(props) => (
           <Report
             {...props}
@@ -168,11 +183,11 @@ function AppStackScreen({
             user={userData}
             onLogout={onLogout}
             onBack={() => props.navigation.goBack()}
-            onNavigateHome={() => props.navigation.navigate('Home')}
-            onNavigateTeam={() => props.navigation.navigate('Team')}
-            onNavigateLeave={() => props.navigation.navigate('Leave')}
-            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
-            onNavigateExport={() => props.navigation.navigate('Export')}
+            onNavigateHome={() => pushScreen(props.navigation, 'Home')}
+            onNavigateTeam={() => pushScreen(props.navigation, 'Team')}
+            onNavigateLeave={() => pushScreen(props.navigation, 'Leave')}
+            onNavigateApprovals={() => pushScreen(props.navigation, 'Approvals')}
+            onNavigateExport={() => pushScreen(props.navigation, 'Export')}
           />
         )}
       </AppStack.Screen>
@@ -182,11 +197,11 @@ function AppStackScreen({
             {...props}
             user={userData}
             onBack={() => props.navigation.goBack()}
-            onNavigateHome={() => props.navigation.navigate('Home')}
-            onNavigateTeam={() => props.navigation.navigate('Team')}
-            onNavigateLeave={() => props.navigation.navigate('Leave')}
-            onNavigateApprovals={() => props.navigation.navigate('Approvals')}
-            onNavigateSettings={() => props.navigation.navigate('Settings')}
+            onNavigateHome={() => pushScreen(props.navigation, 'Home')}
+            onNavigateTeam={() => pushScreen(props.navigation, 'Team')}
+            onNavigateLeave={() => pushScreen(props.navigation, 'Leave')}
+            onNavigateApprovals={() => pushScreen(props.navigation, 'Approvals')}
+            onNavigateSettings={() => pushScreen(props.navigation, 'Settings')}
           />
         )}
       </AppStack.Screen>
@@ -272,11 +287,17 @@ export default function App() {
     }
   }, [userData?.id]);
 
-  // Handle notification interaction (e.g. user tapped "Punch In Now" button)
+  // Handle notification interaction (e.g. user tapped "Punch In Now" button or HR Leave alert)
   useEffect(() => {
-    const cleanup = setupNotificationResponseHandler(() => {
+    const cleanup = setupNotificationResponseHandler((targetScreen) => {
       if (navigationRef.isReady()) {
-        navigationRef.navigate('Home');
+        if (targetScreen === 'Approvals') {
+          navigationRef.navigate('Approvals');
+        } else if (targetScreen === 'Leave') {
+          navigationRef.navigate('Leave');
+        } else {
+          navigationRef.navigate('Home');
+        }
       }
     });
     return cleanup;

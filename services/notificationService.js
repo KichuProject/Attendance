@@ -136,19 +136,29 @@ export async function registerForPushNotificationsAsync(userId) {
 }
 
 /**
- * Listen for notification interactions (e.g., user tapped "Punch In Now" button)
- * @param {Function} onPunchIn
+ * Listen for notification interactions (e.g., user tapped "Punch In Now" button or HR leave request alert)
+ * @param {Function} onNavigate - callback with (targetScreen, data)
  * @returns {() => void} cleanup function
  */
-export function setupNotificationResponseHandler(onPunchIn) {
+export function setupNotificationResponseHandler(onNavigate) {
   const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
     const actionId = response?.actionIdentifier;
     const data = response?.notification?.request?.content?.data;
 
     if (actionId === 'PUNCH_IN_ACTION' || data?.target === 'PunchIn') {
-      if (typeof onPunchIn === 'function') {
-        onPunchIn();
+      if (typeof onNavigate === 'function') {
+        onNavigate('Home', data);
       }
+    } else if (data?.screen === 'Approvals' || data?.type === 'LEAVE_APPLICATION') {
+      if (typeof onNavigate === 'function') {
+        onNavigate('Approvals', data);
+      }
+    } else if (data?.screen === 'Leave' || data?.type === 'LEAVE_STATUS_UPDATE') {
+      if (typeof onNavigate === 'function') {
+        onNavigate('Leave', data);
+      }
+    } else if (typeof onNavigate === 'function') {
+      onNavigate(data?.screen || 'Home', data);
     }
   });
 

@@ -1,31 +1,6 @@
 const cron = require('node-cron');
 const { pool } = require('../config/db');
-
-/**
- * Send batch push notifications via Expo / FCM Push Gateway
- * @param {Array<{to: string, title: string, body: string, data?: object}>} messages
- */
-async function sendExpoPushNotifications(messages) {
-  if (!messages || messages.length === 0) return [];
-
-  try {
-    const response = await fetch('https://exp.host/--/api/v2/push/send', {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-        'Accept-Encoding': 'gzip, deflate',
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(messages),
-    });
-
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('[Push Service] Error dispatching Expo push notifications:', error.message);
-    return null;
-  }
-}
+const { sendExpoPushNotifications } = require('../utils/pushNotifier');
 
 /**
  * Core function to check and send 9:45 AM attendance reminders (15 mins before 10:00 AM)
