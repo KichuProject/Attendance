@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   StyleSheet,
   Text,
@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import THEME from '../../constants/theme';
@@ -21,6 +22,7 @@ export default function CalendarPickerModal({
   prevMonth,
   nextMonth,
   isPrevMonthDisabled,
+  isNextMonthDisabled,
   blanks = [],
   monthDays = [],
   isDaySelected,
@@ -28,122 +30,249 @@ export default function CalendarPickerModal({
   onSelectDate,
   selectToday,
   isTodayDisabled,
+  onSelectYear,
+  maxSelectableYear,
+  minSelectableYear = 1950,
 }) {
+  const [isYearPickerOpen, setIsYearPickerOpen] = useState(false);
+
+  const handleClose = () => {
+    setIsYearPickerOpen(false);
+    if (onClose) onClose();
+  };
+
   const prevDisabled = typeof isPrevMonthDisabled === 'function' ? isPrevMonthDisabled() : !!isPrevMonthDisabled;
+  const nextDisabled = typeof isNextMonthDisabled === 'function' ? isNextMonthDisabled() : !!isNextMonthDisabled;
   const todayDisabled = typeof isTodayDisabled === 'function' ? isTodayDisabled() : !!isTodayDisabled;
+
+  // Build the strictly filtered list of years:
+  // If maxSelectableYear is specified, years above it are NEVER included/visible.
+  const currentCalendarYear = new Date().getFullYear();
+  const upperYear = maxSelectableYear !== undefined ? maxSelectableYear : currentCalendarYear + 5;
+  const lowerYear = minSelectableYear !== undefined ? minSelectableYear : 1950;
+
+  const selectableYears = [];
+  for (let y = upperYear; y >= lowerYear; y--) {
+    selectableYears.push(y);
+  }
+
+  const handleYearPress = (year) => {
+    if (typeof onSelectYear === 'function') {
+      onSelectYear(year);
+    }
+    setIsYearPickerOpen(false);
+  };
+
+  const getTargetTitle = () => {
+    if (calendarTarget === 'dob') return 'Select Date of Birth';
+    if (calendarTarget === 'from') return 'Select Start Date';
+    if (calendarTarget === 'to') return 'Select End Date';
+    return 'Select Date';
+  };
 
   return (
     <Modal
       animationType="fade"
       transparent={true}
       visible={visible}
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
-      <Pressable style={styles.calendarModalOverlay} onPress={onClose}>
+      <Pressable style={styles.calendarModalOverlay} onPress={handleClose}>
         <Pressable style={styles.calendarCard} onPress={(e) => e.stopPropagation()}>
           {/* Calendar Header */}
           <View style={styles.calendarHeader}>
             <TouchableOpacity
-              onPress={prevMonth}
+              onPress={isYearPickerOpen ? () => setIsYearPickerOpen(false) : prevMonth}
               style={[
                 styles.monthNavButton,
-                prevDisabled && styles.monthNavButtonDisabled,
+                (!isYearPickerOpen && prevDisabled) && styles.monthNavButtonDisabled,
               ]}
-              disabled={prevDisabled}
+              disabled={!isYearPickerOpen && prevDisabled}
               activeOpacity={0.7}
             >
-              <Ionicons name="chevron-back" size={18} color={THEME.colors.textPrimary} />
+              <Ionicons
+                name={isYearPickerOpen ? 'calendar-outline' : 'chevron-back'}
+                size={18}
+                color={THEME.colors.textPrimary}
+              />
             </TouchableOpacity>
+
             <View style={styles.calendarTitleContainer}>
               <Text style={styles.calendarTargetLabel}>
-                {calendarTarget === 'from' ? 'Select Start Date' : 'Select End Date'}
+                {isYearPickerOpen
+                  ? (maxSelectableYear ? 'Select Year (18+ Only)' : 'Select Year')
+                  : getTargetTitle()}
               </Text>
-              <Text style={styles.calendarMonthText}>
-                {monthNames[cMonth]} {cYear}
-              </Text>
+
+              {/* Tappable Month/Year to toggle year picker */}
+              <TouchableOpacity
+                onPress={() => {
+                  if (typeof onSelectYear === 'function') {
+                    setIsYearPickerOpen(!isYearPickerOpen);
+                  }
+                }}
+                disabled={!onSelectYear}
+                style={styles.yearToggleBtn}
+                activeOpacity={onSelectYear ? 0.7 : 1}
+              >
+                <Text style={styles.calendarMonthText}>
+                  {monthNames[cMonth]} <Text style={[styles.yearNumberText, onSelectYear && styles.yearNumberClickable]}>
+                    {cYear}
+                  </Text>
+                  {Boolean(onSelectYear) && (
+                    <Ionicons
+                      name={isYearPickerOpen ? 'chevron-up' : 'chevron-down'}
+                      size={13}
+                      color={THEME.colors.primary}
+                      style={{ marginLeft: 4 }}
+                    />
+                  )}
+                </Text>
+              </TouchableOpacity>
             </View>
+
             <TouchableOpacity
-              onPress={nextMonth}
-              style={styles.monthNavButton}
+              onPress={isYearPickerOpen ? () => setIsYearPickerOpen(false) : nextMonth}
+              style={[
+                styles.monthNavButton,
+                (!isYearPickerOpen && nextDisabled) && styles.monthNavButtonDisabled,
+              ]}
+              disabled={!isYearPickerOpen && nextDisabled}
               activeOpacity={0.7}
             >
-              <Ionicons name="chevron-forward" size={18} color={THEME.colors.textPrimary} />
+              <Ionicons
+                name={isYearPickerOpen ? 'close' : 'chevron-forward'}
+                size={18}
+                color={THEME.colors.textPrimary}
+              />
             </TouchableOpacity>
           </View>
 
-          {/* Weekdays */}
-          <View style={styles.weekDaysRow}>
-            {weekDays.map((wd) => (
-              <Text key={wd} style={styles.weekDayText}>
-                {wd}
+          {isYearPickerOpen ? (
+            /* ── YEAR SELECTION GRID ── */
+            <View style={styles.yearPickerContainer}>
+              <Text style={styles.yearPickerHint}>
+                Tap any year below to jump directly:
               </Text>
-            ))}
-          </View>
-
-          {/* Days Grid */}
-          <View style={styles.daysGrid}>
-            {blanks.map((b) => (
-              <View key={`b-${b}`} style={styles.dayCell} />
-            ))}
-            {monthDays.map((d) => {
-              const selected = typeof isDaySelected === 'function' ? isDaySelected(d) : false;
-              const disabled = typeof isDayDisabled === 'function' ? isDayDisabled(d) : false;
-              return (
-                <TouchableOpacity
-                  key={`d-${d}`}
-                  style={[styles.dayCell, disabled && styles.disabledDayCell]}
-                  onPress={() => onSelectDate && onSelectDate(d)}
-                  disabled={disabled}
-                  activeOpacity={0.6}
-                >
-                  <View
-                    style={[
-                      styles.dayCellInner,
-                      selected && styles.selectedDayCell,
-                      disabled && styles.disabledDayCellInner,
-                    ]}
-                  >
-                    <Text
+              <ScrollView
+                style={styles.yearScrollView}
+                contentContainerStyle={styles.yearGrid}
+                showsVerticalScrollIndicator={true}
+              >
+                {selectableYears.map((y) => {
+                  const isSelected = y === cYear;
+                  return (
+                    <TouchableOpacity
+                      key={y}
                       style={[
-                        styles.dayText,
-                        selected && styles.selectedDayText,
-                        disabled && styles.disabledDayText,
+                        styles.yearGridItem,
+                        isSelected && styles.yearGridItemSelected,
                       ]}
+                      onPress={() => handleYearPress(y)}
+                      activeOpacity={0.7}
                     >
-                      {d}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+                      <Text
+                        style={[
+                          styles.yearGridText,
+                          isSelected && styles.yearGridTextSelected,
+                        ]}
+                      >
+                        {y}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          ) : (
+            /* ── NORMAL DAY CALENDAR VIEW ── */
+            <>
+              {/* Weekdays */}
+              <View style={styles.weekDaysRow}>
+                {weekDays.map((wd) => (
+                  <Text key={wd} style={styles.weekDayText}>
+                    {wd}
+                  </Text>
+                ))}
+              </View>
+
+              {/* Days Grid */}
+              <View style={styles.daysGrid}>
+                {blanks.map((b) => (
+                  <View key={`b-${b}`} style={styles.dayCell} />
+                ))}
+                {monthDays.map((d) => {
+                  const selected = typeof isDaySelected === 'function' ? isDaySelected(d) : false;
+                  const disabled = typeof isDayDisabled === 'function' ? isDayDisabled(d) : false;
+                  return (
+                    <TouchableOpacity
+                      key={`d-${d}`}
+                      style={[styles.dayCell, disabled && styles.disabledDayCell]}
+                      onPress={() => onSelectDate && onSelectDate(d)}
+                      disabled={disabled}
+                      activeOpacity={0.6}
+                    >
+                      <View
+                        style={[
+                          styles.dayCellInner,
+                          selected && styles.selectedDayCell,
+                          disabled && styles.disabledDayCellInner,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.dayText,
+                            selected && styles.selectedDayText,
+                            disabled && styles.disabledDayText,
+                          ]}
+                        >
+                          {d}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
           {/* Calendar Footer */}
           <View style={styles.calendarFooter}>
-            <TouchableOpacity
-              style={[
-                styles.calendarTodayBtn,
-                todayDisabled && styles.calendarTodayBtnDisabled,
-              ]}
-              onPress={selectToday}
-              disabled={todayDisabled}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={[
-                  styles.calendarTodayText,
-                  todayDisabled && styles.calendarTodayTextDisabled,
-                ]}
+            {isYearPickerOpen ? (
+              <TouchableOpacity
+                style={styles.calendarTodayBtn}
+                onPress={() => setIsYearPickerOpen(false)}
+                activeOpacity={0.7}
               >
-                Today
-              </Text>
-            </TouchableOpacity>
+                <Text style={styles.calendarTodayText}>Back to Calendar</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[
+                  styles.calendarTodayBtn,
+                  todayDisabled && styles.calendarTodayBtnDisabled,
+                ]}
+                onPress={selectToday}
+                disabled={todayDisabled}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.calendarTodayText,
+                    todayDisabled && styles.calendarTodayTextDisabled,
+                  ]}
+                >
+                  {calendarTarget === 'dob' ? 'Default (Adult)' : 'Today'}
+                </Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               style={styles.calendarCancelBtn}
-              onPress={onClose}
+              onPress={handleClose}
               activeOpacity={0.7}
             >
-              <Text style={styles.calendarCancelText}>Cancel</Text>
+              <Text style={styles.calendarCancelText}>Close</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -184,11 +313,23 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  yearToggleBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: THEME.radii.sm,
+    marginTop: 2,
+  },
   calendarMonthText: {
     fontSize: 15,
     fontWeight: '800',
     color: THEME.colors.textPrimary,
-    marginTop: 2,
+  },
+  yearNumberText: {
+    fontWeight: '800',
+  },
+  yearNumberClickable: {
+    color: THEME.colors.primary,
+    textDecorationLine: 'underline',
   },
   monthNavButton: {
     padding: 6,
@@ -252,6 +393,54 @@ const styles = StyleSheet.create({
   disabledDayText: {
     color: THEME.colors.textMuted,
   },
+
+  // Year Picker Styles
+  yearPickerContainer: {
+    paddingVertical: 6,
+  },
+  yearPickerHint: {
+    fontSize: 11,
+    color: THEME.colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  yearScrollView: {
+    maxHeight: 230,
+  },
+  yearGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    gap: 8,
+  },
+  yearGridItem: {
+    width: '30%',
+    paddingVertical: 10,
+    borderRadius: THEME.radii.md,
+    backgroundColor: THEME.colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: THEME.colors.borderLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2,
+  },
+  yearGridItemSelected: {
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.primary,
+  },
+  yearGridText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.colors.textPrimary,
+  },
+  yearGridTextSelected: {
+    color: THEME.colors.textInverse,
+    fontWeight: '800',
+  },
+
+  // Footer Styles
   calendarFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

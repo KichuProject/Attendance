@@ -15,6 +15,8 @@ import Leave from './screen/Leave';
 import Team from './screen/Team';
 import Approvals from './screen/Approvals';
 import Export from './screen/Export';
+import CompleteProfile from './screen/CompleteProfile';
+import { api } from './services/api';
 import {
   registerForPushNotificationsAsync,
   setupNotificationResponseHandler,
@@ -256,7 +258,20 @@ export default function App() {
         if (session && session.user && session.token) {
           const remaining = session.expiresAt - Date.now();
           if (remaining > 0) {
-            setUserData(session.user);
+            let activeUser = session.user;
+            // Check real-time profile completion status from backend
+            try {
+              const profRes = await api.getEmployeeProfile(activeUser.id);
+              if (profRes && typeof profRes.isProfileCompleted === 'boolean') {
+                activeUser = {
+                  ...activeUser,
+                  isProfileCompleted: profRes.isProfileCompleted,
+                  empId: profRes.empId || activeUser.empId,
+                };
+              }
+            } catch (_pErr) {}
+
+            setUserData(activeUser);
             scheduleSessionExpiryTimer(remaining);
           } else {
             await storage.clearAuthSession();
@@ -311,19 +326,50 @@ export default function App() {
   };
 
   const handleLogin = async (data) => {
-    setUserData(data);
+    let loginUser = data?.user || data;
+    // Check real-time profile completion status if not provided
+    if (loginUser?.id && typeof loginUser.isProfileCompleted === 'undefined') {
+      try {
+        const profRes = await api.getEmployeeProfile(loginUser.id);
+        if (profRes && typeof profRes.isProfileCompleted === 'boolean') {
+          loginUser = {
+            ...loginUser,
+            isProfileCompleted: profRes.isProfileCompleted,
+            empId: profRes.empId || loginUser.empId,
+          };
+        }
+      } catch (_p) {}
+    }
+    setUserData(loginUser);
     if (data?.token) {
       // Store session in AsyncStorage for 24 hours
-      await storage.saveAuthSession(data.token, data, TWENTY_FOUR_HOURS_MS);
+      await storage.saveAuthSession(data.token, loginUser, TWENTY_FOUR_HOURS_MS);
       scheduleSessionExpiryTimer(TWENTY_FOUR_HOURS_MS);
     }
   };
 
   const handleRegister = async (data) => {
-    setUserData(data);
+    const regUser = {
+      ...(data?.user || data),
+      isProfileCompleted: false,
+    };
+    setUserData(regUser);
     if (data?.token) {
-      await storage.saveAuthSession(data.token, data, TWENTY_FOUR_HOURS_MS);
+      await storage.saveAuthSession(data.token, regUser, TWENTY_FOUR_HOURS_MS);
       scheduleSessionExpiryTimer(TWENTY_FOUR_HOURS_MS);
+    }
+  };
+
+  const handleProfileCompleted = async (updatedUser) => {
+    const mergedUser = {
+      ...userData,
+      ...updatedUser,
+      isProfileCompleted: true,
+    };
+    setUserData(mergedUser);
+    const session = await storage.getAuthSession();
+    if (session && session.token) {
+      await storage.saveAuthSession(session.token, mergedUser, TWENTY_FOUR_HOURS_MS);
     }
   };
 
@@ -353,14 +399,22 @@ export default function App() {
         <NavigationContainer ref={navigationRef}>
           <StatusBar style="dark" translucent backgroundColor="transparent" />
           {userData ? (
-            <AppStackScreen
-              userData={userData}
-              onLogout={handleLogout}
-              attendanceRecords={attendanceRecords}
-              setAttendanceRecords={setAttendanceRecords}
-              leaveRequests={leaveRequests}
-              addLeaveRequest={addLeaveRequest}
-            />
+            !userData.isProfileCompleted ? (
+              <CompleteProfile
+                user={userData}
+                onComplete={handleProfileCompleted}
+                onLogout={handleLogout}
+              />
+            ) : (
+              <AppStackScreen
+                userData={userData}
+                onLogout={handleLogout}
+                attendanceRecords={attendanceRecords}
+                setAttendanceRecords={setAttendanceRecords}
+                leaveRequests={leaveRequests}
+                addLeaveRequest={addLeaveRequest}
+              />
+            )
           ) : (
             <AuthStackScreen
               onLogin={handleLogin}

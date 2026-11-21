@@ -14,6 +14,7 @@ const authRoutes = require('./routes/auth');
 const attendanceRoutes = require('./routes/attendance');
 const leaveRoutes = require('./routes/leave');
 const projectRoutes = require('./routes/project');
+const profileRoutes = require('./routes/profile');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -59,6 +60,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/projects', projectRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {

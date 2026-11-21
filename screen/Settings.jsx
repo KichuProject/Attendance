@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -35,21 +35,56 @@ export default function Settings({
     user?.username?.toLowerCase() === 'hr' ||
     user?.username?.toLowerCase() === 'hrr';
 
+  // Live Employee Profile & Verification Data
+  const [profileData, setProfileData] = useState(null);
+  const [isVerified, setIsVerified] = useState(Boolean(user?.isVerified));
+  const [verificationStatus, setVerificationStatus] = useState(user?.verificationStatus || 'pending');
+  const [isLoadingProfile, setIsLoadingProfile] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (user?.id) {
+      setIsLoadingProfile(true);
+      api.getEmployeeProfile(user.id, isHR, user.role)
+        .then((res) => {
+          if (!isMounted) return;
+          if (res && res.success) {
+            setIsVerified(Boolean(res.isVerified));
+            setVerificationStatus(res.verificationStatus || (res.isVerified ? 'verified' : 'pending'));
+            if (res.profile) {
+              setProfileData(res.profile);
+            }
+          }
+        })
+        .catch((err) => console.log('[Settings] Error fetching profile:', err))
+        .finally(() => {
+          if (isMounted) setIsLoadingProfile(false);
+        });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.id, isHR]);
+
   let displayName = user?.name || user?.username || (isHR ? 'HR Admin' : 'Kishore Kumar');
   displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
-  // Profile data
+  // Profile data (Merged with verified DB profile details)
+  const p = profileData;
+  const fullName = p ? `${p.first_name || ''} ${p.last_name || ''}`.trim() : displayName;
   const userProfile = {
-    name: displayName,
-    dob: user?.dob || '15 Aug 1998',
-    email: user?.email || (isHR ? 'hr.admin@techsigaram.com' : 'kishore.k@techsigaram.com'),
-    phone: user?.phone || '+91 98401 23456',
-    empId: user?.empId || (isHR ? 'MGR-001' : 'EMP-1002'),
-    role: isHR ? 'HR Administrator' : 'Software Engineer',
-    department: isHR ? 'Human Resources' : 'Engineering',
+    name: fullName || displayName,
+    dob: p?.dob || user?.dob || '15 Aug 1998',
+    email: p?.official_email || user?.email || (isHR ? 'hr.admin@pskgroup.com' : 'employee@pskgroup.com'),
+    phone: p?.mobile ? `+91 ${p.mobile}` : (user?.phone || '+91 98401 23456'),
+    empId: p?.emp_id || user?.empId || (isHR ? 'MGR-001' : 'EMP-1002'),
+    role: p?.designation || (isHR ? 'HR Administrator' : 'Site Engineer'),
+    department: p?.department || (isHR ? 'Human Resources' : 'Civil Engineering'),
+    address: p?.address ? `${p.address}, ${p.city || ''}, ${p.home_state || ''}` : (p?.city ? `${p.city}, ${p.home_state || ''}` : ''),
     project:
       (typeof user?.project === 'object' ? user?.project?.name : user?.project) ||
-      (isHR ? 'Corporate HQ' : 'AI Attendance Suite'),
+      (isHR ? 'PSK Corporate HQ' : 'PSK Engineering Site'),
+    salary: p?.salary || null,
   };
 
   // Change Password state
@@ -192,9 +227,74 @@ export default function Settings({
           </View>
         </View>
 
+        {/* ── VERIFICATION STATUS CARD (EMPLOYEE) ── */}
+        {!isHR && (
+          isVerified ? (
+            <View style={styles.verifiedStatusCard}>
+              <View style={styles.verifiedStatusIconBox}>
+                <Ionicons name="shield-checkmark" size={22} color="#059669" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.verifiedStatusTitle}>Profile Verified</Text>
+                  <View style={styles.verifiedStatusPill}>
+                    <Text style={styles.verifiedStatusPillText}>HR VERIFIED</Text>
+                  </View>
+                </View>
+                <Text style={styles.verifiedStatusDesc}>
+                  Your employee profile & credentials have been verified by HR.
+                  {Boolean(p?.salary) ? ` Monthly Salary: ${p.salary}` : ''}
+                </Text>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.pendingStatusCard}>
+              <View style={styles.pendingStatusIconBox}>
+                <Ionicons name="time" size={22} color="#D97706" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={styles.pendingStatusTitle}>Verification Pending</Text>
+                  <View style={styles.pendingStatusPill}>
+                    <Text style={styles.pendingStatusPillText}>AWAITING HR</Text>
+                  </View>
+                </View>
+                <Text style={styles.pendingStatusDesc}>
+                  Profile submitted. Awaiting HR verification and salary assignment.
+                </Text>
+              </View>
+            </View>
+          )
+        )}
+
         {/* ── 2. PERSONAL DETAILS CARD (FLEXIBLE KEY-VALUE ROWS) ── */}
         <View style={styles.card}>
           <Text style={styles.cardHeader}>Personal Details</Text>
+
+          {/* Verification Status */}
+          {!isHR && (
+            <>
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Verification</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                  <Ionicons
+                    name={isVerified ? 'checkmark-circle' : 'time'}
+                    size={15}
+                    color={isVerified ? '#059669' : '#D97706'}
+                  />
+                  <Text
+                    style={[
+                      styles.rowValue,
+                      { color: isVerified ? '#059669' : '#D97706', fontWeight: '800' },
+                    ]}
+                  >
+                    {isVerified ? 'Verified' : 'Pending Approval'}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.divider} />
+            </>
+          )}
 
           {/* Full Name */}
           <View style={styles.row}>
@@ -233,6 +333,35 @@ export default function Settings({
             <Text style={styles.rowLabel}>Department</Text>
             <Text style={styles.rowValue} numberOfLines={1}>{userProfile.department}</Text>
           </View>
+
+          {/* Salary (Visible to employee after HR has seeded and verified) */}
+          {Boolean(p?.salary) && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Salary</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="cash-outline" size={15} color="#059669" />
+                  <Text style={[styles.rowValue, { color: '#059669', fontWeight: '800' }]}>
+                    {p.salary}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* Address */}
+          {Boolean(userProfile.address) && (
+            <>
+              <View style={styles.divider} />
+              <View style={styles.row}>
+                <Text style={styles.rowLabel}>Address</Text>
+                <Text style={[styles.rowValue, { flex: 1, textAlign: 'right' }]} numberOfLines={2}>
+                  {userProfile.address}
+                </Text>
+              </View>
+            </>
+          )}
         </View>
 
         {/* ── 3. SECURITY SECTION ── */}
@@ -436,6 +565,7 @@ export default function Settings({
       <HomeTabSwitcher
         activeTab="settings"
         isHR={isHR}
+        user={user}
         onNavigateHome={onNavigateHome || onBack}
         onNavigateTeam={onNavigateTeam}
         onNavigateLeave={onNavigateLeave}
@@ -572,6 +702,90 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     color: '#EA580C',
+  },
+
+  /* Verification Status Cards */
+  verifiedStatusCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 14,
+  },
+  verifiedStatusIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedStatusTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  verifiedStatusPill: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  verifiedStatusPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#15803D',
+    letterSpacing: 0.3,
+  },
+  verifiedStatusDesc: {
+    fontSize: 11,
+    color: '#15803D',
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  pendingStatusCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 14,
+  },
+  pendingStatusIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pendingStatusTitle: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#92400E',
+  },
+  pendingStatusPill: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 4,
+  },
+  pendingStatusPillText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#B45309',
+    letterSpacing: 0.3,
+  },
+  pendingStatusDesc: {
+    fontSize: 11,
+    color: '#B45309',
+    marginTop: 2,
+    lineHeight: 15,
   },
 
   /* Standard Card */

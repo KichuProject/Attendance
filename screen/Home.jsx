@@ -23,7 +23,6 @@ import * as Haptics from 'expo-haptics';
 import { api } from '../services/api';
 import THEME from '../constants/theme';
 import AppleEmployeeCard from '../components/AppleEmployeeCard';
-import AttendanceKpiCard from '../components/home/AttendanceKpiCard';
 import ShiftTimerCard from '../components/home/ShiftTimerCard';
 import AssignedProjectCard from '../components/home/AssignedProjectCard';
 import PunchSection from '../components/home/PunchSection';
@@ -213,7 +212,11 @@ export default function Home({
   leaveRequests = [],
   addLeaveRequest,
 }) {
-  const isHR = user?.role === 'hr' || user?.role === 'manager' || user?.username?.toLowerCase() === 'hr';
+  const isHR =
+    user?.role?.toLowerCase() === 'hr' ||
+    user?.role?.toLowerCase() === 'manager' ||
+    user?.username?.toLowerCase() === 'hr' ||
+    user?.username?.toLowerCase() === 'hrr';
   let displayName = user?.name || user?.username || (isHR ? 'HR Admin' : 'Employee');
   displayName = displayName.charAt(0).toUpperCase() + displayName.slice(1);
 
@@ -1564,7 +1567,6 @@ export default function Home({
               project={userAssignedProject}
             />
 
-            <AttendanceKpiCard totalDays={totalDays} todayStatus={todayStatus} />
             <ShiftTimerCard
               shiftStats={shiftStats}
               todayStatus={todayStatus}
@@ -1654,7 +1656,7 @@ export default function Home({
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         isHR={isHR}
-        pendingLeavesCount={isHR && dbLeaveRequests ? dbLeaveRequests.filter((r) => r.status === 'Pending').length : undefined}
+        user={user}
         onOpenSettings={onNavigateSettings}
         onNavigateHome={() => setActiveTab('attendance')}
         onNavigateTeam={onNavigateTeam}

@@ -519,6 +519,77 @@ export const api = {
       return { success: false, error: 'Network error: could not connect to server' };
     }
   },
+
+  // ── Employee Onboarding & Mandatory Profile Details ──
+  getEmployeeProfile: async (userId, isHR = false, role = '') => {
+    try {
+      const q = isHR ? `?isHR=true&role=${role || 'hr'}` : '';
+      const res = await fetch(`${API_BASE_URL}/profile/${userId}${q}`);
+      if (!res.ok) {
+        return { success: false, error: `Server returned ${res.status}` };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('API getEmployeeProfile error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  saveEmployeeProfile: async (profilePayload) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/profile/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profilePayload),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API saveEmployeeProfile error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  // ── HR Employee Verification & Salary Management ──
+  getHREmployeeDirectory: async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/profile/all/directory?isHR=true`);
+      if (!res.ok) {
+        return { success: false, error: `Server returned ${res.status}` };
+      }
+      return await res.json();
+    } catch (error) {
+      console.error('API getHREmployeeDirectory error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  verifyEmployeeProfile: async (payload) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/profile/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API verifyEmployeeProfile error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
+
+  updateEmployeeSalary: async (payload) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/profile/update-salary`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await res.json();
+    } catch (error) {
+      console.error('API updateEmployeeSalary error:', error);
+      return { success: false, error: 'Network error: could not connect to server' };
+    }
+  },
 };
 
 

@@ -314,6 +314,7 @@ export default function Team({
       <HomeTabSwitcher
         activeTab="team"
         isHR={true}
+        user={user}
         onNavigateHome={onNavigateHome || onBack}
         onNavigateTeam={() => {}}
         onNavigateLeave={onNavigateLeave}

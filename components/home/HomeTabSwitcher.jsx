@@ -7,38 +7,73 @@ import { api } from '../../services/api';
 export default function HomeTabSwitcher({
   activeTab,
   setActiveTab,
-  isHR,
+  isHR: isHRProp,
+  user,
   pendingLeavesCount,
+  pendingApprovalsCount,
   onOpenSettings,
   onNavigateHome,
   onNavigateTeam,
   onNavigateLeave,
   onNavigateApprovals,
 }) {
+  const isHR =
+    Boolean(isHRProp) ||
+    user?.role?.toLowerCase() === 'hr' ||
+    user?.role?.toLowerCase() === 'manager' ||
+    user?.username?.toLowerCase() === 'hr' ||
+    user?.username?.toLowerCase() === 'hrr';
+
   const [fetchedPendingCount, setFetchedPendingCount] = useState(0);
 
   // Automatically fetch pending count on ALL screens so the badge is always consistent
   useEffect(() => {
     let isMounted = true;
     if (isHR) {
-      api.getAllLeaveRequests()
-        .then((res) => {
-          if (isMounted && res && res.success && Array.isArray(res.requests)) {
-            const pending = res.requests.filter((r) => r.status === 'Pending').length;
-            setFetchedPendingCount(pending);
+      const fetchApprovalsCount = async () => {
+        try {
+          const results = await Promise.allSettled([
+            api.getAllLeaveRequests(),
+            api.getHREmployeeDirectory(),
+          ]);
+
+          let count = 0;
+          if (results[0].status === 'fulfilled' && results[0].value) {
+            const leaveRes = results[0].value;
+            if (leaveRes && leaveRes.success && Array.isArray(leaveRes.requests)) {
+              count += leaveRes.requests.filter((r) => r.status === 'Pending').length;
+            }
           }
-        })
-        .catch(() => {});
+          if (results[1].status === 'fulfilled' && results[1].value) {
+            const profRes = results[1].value;
+            if (profRes && profRes.success && Array.isArray(profRes.employees)) {
+              count += profRes.employees.filter((e) => !e.is_verified).length;
+            }
+          }
+
+          if (isMounted) {
+            setFetchedPendingCount(count);
+          }
+        } catch (_err) {}
+      };
+
+      fetchApprovalsCount();
+      const interval = setInterval(() => {
+        if (isMounted) fetchApprovalsCount();
+      }, 4000);
+
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
     }
-    return () => {
-      isMounted = false;
-    };
   }, [isHR, activeTab]);
 
-  const displayPendingCount =
-    typeof pendingLeavesCount === 'number'
-      ? pendingLeavesCount
-      : fetchedPendingCount;
+  const displayPendingCount = Math.max(
+    fetchedPendingCount,
+    typeof pendingApprovalsCount === 'number' ? pendingApprovalsCount : 0,
+    typeof pendingLeavesCount === 'number' ? pendingLeavesCount : 0
+  );
 
   const handleTabPress = (tab) => {
     try {
@@ -200,6 +235,7 @@ const styles = StyleSheet.create({
     right: 12,
     alignItems: 'center',
     zIndex: 999,
+    overflow: 'visible',
   },
   dockBar: {
     flexDirection: 'row',
@@ -219,6 +255,7 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 420,
     gap: 2,
+    overflow: 'visible',
   },
   dockItem: {
     flex: 1,
@@ -230,6 +267,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     gap: 3,
     position: 'relative',
+    overflow: 'visible',
   },
   dockItemActive: {
     backgroundColor: '#EA580C', // Executive signature orange active capsule pill

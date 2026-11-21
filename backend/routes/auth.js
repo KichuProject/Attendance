@@ -55,6 +55,7 @@ router.post('/register', async (req, res) => {
       empId: employeeId,
       role: userRole,
       project: null,
+      isProfileCompleted: false,
       createdAt,
     };
 
@@ -82,7 +83,7 @@ router.post('/login', async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      'SELECT id, username, password, emp_id, name, role, created_at FROM users WHERE username = ?',
+      'SELECT id, username, password, emp_id, name, role, is_profile_completed, created_at FROM users WHERE username = ?',
       [username]
     );
 
@@ -95,6 +96,21 @@ router.post('/login', async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    // Check if employee profile is completed (via users flag or employee_profiles record)
+    let isProfileCompleted = Boolean(user.is_profile_completed);
+    if (!isProfileCompleted) {
+      try {
+        const [profRows] = await pool.query(
+          'SELECT id FROM employee_profiles WHERE user_id = ? LIMIT 1',
+          [user.id]
+        );
+        if (profRows.length > 0) {
+          isProfileCompleted = true;
+          pool.query('UPDATE users SET is_profile_completed = 1 WHERE id = ?', [user.id]).catch(() => {});
+        }
+      } catch (_pErr) {}
     }
 
     // Fetch user's assigned project
@@ -131,6 +147,7 @@ router.post('/login', async (req, res) => {
       name: user.name,
       role: userRole,
       project: assignedProject,
+      isProfileCompleted,
       createdAt: user.created_at || null,
     };
 
